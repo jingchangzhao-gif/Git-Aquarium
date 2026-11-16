@@ -8,6 +8,7 @@ import { explain, key, parseAnswer, summarize, unknownEvidence, type Answer, typ
 import { P, RULES, TRAITS, hashState, lifespanTicks, maxEnergy, type EventKind, type Organism, type State } from './sim'
 import { COLORS, createTank, silhouette, type ProjectDraw, type Swimmer } from './tank'
 import { DEFAULT_REPOS, countIssues, countPulls, fetchProjects, type Project, type ProjectSet } from './projects'
+import { buildProject } from './fish'
 import { drift, placeProjects, type Agent } from './fishschool'
 import type { Command } from './worker'
 
@@ -608,7 +609,7 @@ function frame(now: number) {
       anim += dt
       drift(agents, dt, anim)
     }
-    const items: ProjectDraw[] = agents.map((a) => ({ id: a.id, project: a.project, x: a.x, y: a.y, z: a.z, yaw: a.yaw }))
+    const items: ProjectDraw[] = agents.map((a) => ({ id: a.id, x: a.x, y: a.y, z: a.z, yaw: a.yaw, build: () => buildProject(a.project).group }))
     tank.drawProjects(items, anim, projectRev)
     ctx.clearRect(0, 0, W, H)
     ctx.font = '500 10px "Martian Mono Variable", ui-monospace, monospace'

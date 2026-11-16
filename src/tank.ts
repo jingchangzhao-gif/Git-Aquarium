@@ -3,8 +3,7 @@ import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { P, type Genome } from './sim'
-import { buildProject, disposeProject, updateWave } from './fish'
-import type { Project } from './projects'
+import { disposeProject, updateWave } from './fish'
 
 export const COLORS = ['#f08a2c', '#3f7fe0', '#f2cf3a', '#58b9a5', '#d9534f', '#8a63c9', '#9fc94f', '#e9a3b8'] // one per lineage
 const SHARED_FOOD = '#efe9da' // baseline food, which any lineage may eat
@@ -21,11 +20,12 @@ export interface Swimmer {
 }
 
 // One repository drawn as a fish, a rock, or a clump of seaweed, placed in scene units.
+// The caller supplies the builder so the same cache draws repositories and pull requests.
 export interface ProjectDraw {
   id: string
-  project: Project
   x: number; y: number; z: number
   yaw: number
+  build: () => THREE.Group
 }
 
 const CLEAR = { top: '#7cc6dc', fog: '#1f6c8e', density: 0.066 }
@@ -465,7 +465,7 @@ export function createTank(canvas: HTMLCanvasElement) {
             projectsRoot.remove(entry.group)
             disposeProject(entry.group)
           }
-          entry = { rev, group: buildProject(item.project).group }
+          entry = { rev, group: item.build() }
           projectsRoot.add(entry.group)
           projectCache.set(item.id, entry)
         }
