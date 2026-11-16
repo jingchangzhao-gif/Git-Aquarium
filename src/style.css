@@ -320,6 +320,47 @@ h3 { margin: 14px 0 6px; color: var(--dim); }
 .badge.rules { background: var(--amber); }
 .badge.model { background: var(--glow); }
 
+/* ---- Projects mode ----------------------------------------------------------------------------- */
+
+.tabs { display: flex; gap: 6px; margin-top: 14px; }
+.tabs button { padding: 6px 12px; }
+.tabs button[aria-pressed='true'] { background: var(--glow); border-color: var(--glow); color: var(--abyss); }
+body[data-mode='ecosystem'] .projects-only { display: none; }
+body[data-mode='projects'] .eco-only { display: none; }
+
+#projects { animation: rise 0.7s 0.1s both; }
+#preadout { margin-top: 10px; color: var(--dim); font: 400 11.5px/1.5 var(--mono); letter-spacing: 0; text-transform: none; }
+#pnotices { margin-top: 12px; color: var(--dim); font-size: 13.5px; }
+#pnotices summary { cursor: pointer; font: 500 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+#pnotices li { margin-top: 6px; padding-left: 12px; border-left: 1px solid var(--line); }
+
+#plegend { display: grid; gap: 2px; margin: 0 -8px; }
+#plegend button {
+  all: unset;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font: 400 11.5px var(--mono);
+  cursor: pointer;
+}
+#plegend button:hover { background: rgba(255, 255, 255, 0.05); }
+#plegend button:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+#plegend button[aria-pressed='true'] { background: rgba(169, 214, 208, 0.12); }
+#plegend span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#plegend b { color: var(--dim); font-weight: 400; }
+#plegend u { color: var(--dim); text-decoration: none; }
+
+#project dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin-top: 12px; font-size: 14px; }
+#project dt { padding-top: 3px; }
+#project .recent { display: grid; gap: 6px; margin-top: 10px; font-size: 13.5px; }
+#project .recent small { color: var(--dim); }
+#project .recent a { overflow-wrap: anywhere; }
+
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
 @keyframes surface { from { opacity: 0; transform: translateX(10px); } }
 

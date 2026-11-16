@@ -6,13 +6,17 @@
     <meta name="color-scheme" content="dark" />
     <title>Git Aquarium</title>
   </head>
-  <body>
+  <body data-mode="ecosystem">
     <header class="masthead">
       <div>
         <h1>Git <em>Aquarium</em></h1>
         <p class="tagline">Your repository is an ecosystem. Your code is alive.</p>
+        <nav class="tabs" aria-label="Mode">
+          <button type="button" id="tab-eco" aria-pressed="true">Ecosystem</button>
+          <button type="button" id="tab-projects" aria-pressed="false">Projects</button>
+        </nav>
       </div>
-      <form id="source">
+      <form id="source" class="eco-only">
         <label for="repo">Public GitHub repository</label>
         <div class="field">
           <input id="repo" placeholder="owner/repo or github.com URL" autocomplete="off" spellcheck="false" required />
@@ -30,9 +34,9 @@
             <canvas id="scene" role="img" aria-label="Aquarium: simulated organisms foraging for food"></canvas>
             <canvas id="overlay" aria-hidden="true"></canvas>
           </div>
-          <p id="date" class="caption"></p>
-          <p id="alarm" class="caption" hidden></p>
-          <div class="transport">
+          <p id="date" class="caption eco-only"></p>
+          <p id="alarm" class="caption eco-only" hidden></p>
+          <div class="transport eco-only">
             <div id="timeline" role="progressbar" aria-label="Replay progress" aria-valuemin="0" aria-valuemax="100">
               <div id="fill"></div>
               <div id="marks"></div>
@@ -52,7 +56,22 @@
           </div>
         </section>
 
-        <section class="stats" aria-labelledby="stats-title">
+        <section class="projects-only" id="projects" aria-labelledby="projects-title">
+          <h2 id="projects-title">Repository fish <span>one repository per body</span></h2>
+          <form id="psource">
+            <div class="field">
+              <input id="prepos" placeholder="owner/repo, owner/repo… (blank loads eight examples)" autocomplete="off" spellcheck="false" />
+              <button id="pload">Load projects</button>
+            </div>
+          </form>
+          <p id="preadout"></p>
+          <details id="pnotices">
+            <summary></summary>
+            <ul></ul>
+          </details>
+        </section>
+
+        <section class="stats eco-only" aria-labelledby="stats-title">
           <h2 id="stats-title">Simulated measurements</h2>
           <dl>
             <div><dt>Population</dt><dd id="s-pop">0</dd></div>
@@ -64,7 +83,7 @@
           </dl>
         </section>
 
-        <section class="chart" aria-labelledby="chart-title">
+        <section class="chart eco-only" aria-labelledby="chart-title">
           <h2 id="chart-title">Population by lineage <span>shaded while a CI penalty is active</span></h2>
           <div id="plot">
             <svg viewBox="0 0 1000 100" preserveAspectRatio="none" role="img" aria-label="Line chart of the population of each lineage over the replay. The Lineages list gives the current counts.">
@@ -81,7 +100,7 @@
           </div>
         </section>
 
-        <section class="ecologist" aria-labelledby="ecologist-title">
+        <section class="ecologist eco-only" aria-labelledby="ecologist-title">
           <h2 id="ecologist-title">Ecologist <span>explains recorded changes from recorded evidence</span></h2>
           <form id="ask">
             <div class="field">
@@ -99,7 +118,7 @@
       </div>
 
       <aside class="panel">
-        <section>
+        <section class="eco-only">
           <h2>Dataset</h2>
           <div id="dataset"></div>
           <details id="notices">
@@ -107,15 +126,23 @@
             <ul></ul>
           </details>
         </section>
-        <section>
+        <section class="eco-only">
           <h2>Lineages <span>one per observed branch · click to filter</span></h2>
           <ul id="legend"></ul>
         </section>
-        <section>
+        <section class="projects-only">
+          <h2>Projects <span>one repository per body · click to inspect</span></h2>
+          <ul id="plegend"></ul>
+        </section>
+        <section class="eco-only">
           <h2>Organism</h2>
           <div id="organism"></div>
         </section>
-        <section>
+        <section class="projects-only">
+          <h2>Fish <span>bones, scales, and upkeep</span></h2>
+          <div id="project"></div>
+        </section>
+        <section class="eco-only">
           <h2>Repository events <span>and their rules</span></h2>
           <ol id="log"></ol>
         </section>

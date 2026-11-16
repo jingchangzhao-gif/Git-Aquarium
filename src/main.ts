@@ -6,7 +6,9 @@ import { importRepo, type Dataset } from './dataset'
 import { demo } from './demo'
 import { explain, key, parseAnswer, summarize, unknownEvidence, type Answer, type Claim, type Context, type Sample } from './explain'
 import { P, RULES, TRAITS, hashState, lifespanTicks, maxEnergy, type EventKind, type Organism, type State } from './sim'
-import { COLORS, createTank, silhouette, type Swimmer } from './tank'
+import { COLORS, createTank, silhouette, type ProjectDraw, type Swimmer } from './tank'
+import { DEFAULT_REPOS, countIssues, countPulls, fetchProjects, type Project, type ProjectSet } from './projects'
+import { drift, placeProjects, type Agent } from './fishschool'
 import type { Command } from './worker'
 
 const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!
@@ -59,6 +61,14 @@ let samples: Sample[] = [] // one reading a simulated second: the chart and the 
 let focus: number | null = null // lineage filter
 let selected: { o: Organism; died: string } | null = null // the inspected organism, as last seen
 let drawn: Swimmer[] = [] // the living fish as last drawn, for picking with a click
+
+// ---- Projects mode ------------------------------------------------------------------------------
+
+let mode: 'ecosystem' | 'projects' = 'ecosystem'
+let projects: ProjectSet | null = null
+let agents: Agent[] = []
+let picked: Agent | null = null
+let projectRev = 0 // bumped when the data changes, so the tank rebuilds its meshes once
 
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
 const send = (c: Command) => worker.postMessage(c)
@@ -315,9 +325,21 @@ function vitals() {
 }
 
 scene.addEventListener('click', (e) => {
-  if (!tank || !cur) return
+  if (!tank) return
   const px = (e.offsetX / scene.clientWidth) * W
   const py = (e.offsetY / scene.clientHeight) * H
+  if (mode === 'projects') { // a project body is larger than a fish, so its hit area is wider
+    let best: Agent | undefined
+    let near = 40
+    for (const a of agents) {
+      const [x, y] = tank.projectScene(a.x, a.y, a.z)
+      const d = Math.hypot(x - px, y - py)
+      if (d < near) { near = d; best = a }
+    }
+    selectProject(best ?? null)
+    return
+  }
+  if (!cur) return
   let best: Swimmer | undefined
   let near = 30 // how close, in canvas units, a click must land
   for (const s of drawn) {
@@ -458,6 +480,118 @@ $('#suggest').addEventListener('click', (e) => {
   if (e.target instanceof HTMLButtonElement) ask(e.target.textContent ?? '')
 })
 
+// ---- Projects mode: one repository per body -----------------------------------------------------
+
+function readout() {
+  if (!projects) return
+  const by = (k: string) => projects!.projects.filter((p) => p.lifecycle === k).length
+  const prs = projects.projects.reduce((n, p) => n + p.prs.total, 0)
+  const issues = projects.projects.reduce((n, p) => n + p.issues.total, 0)
+  $('#preadout').textContent =
+    `${projects.projects.length} projects · ${by('active')} active · ${by('quiet')} quiet · ${by('abandoned')} abandoned · ` +
+    `${prs.toLocaleString('en-US')} PRs · ${issues.toLocaleString('en-US')} issues`
+  const notices = $<HTMLDetailsElement>('#pnotices')
+  notices.open = true
+  notices.firstElementChild!.textContent = `Data boundaries (${projects.notices.length})`
+  notices.lastElementChild!.replaceChildren(...projects.notices.map((n) => el('li', n)))
+}
+
+function projectLegend() {
+  if (!projects) return
+  $('#plegend').replaceChildren(...projects.projects.map((p) => {
+    const li = el('li')
+    const button = el('button')
+    button.type = 'button'
+    button.dataset.repo = p.repo
+    button.title = 'Inspect this project'
+    button.setAttribute('aria-pressed', String(picked?.id === p.repo))
+    button.append(el('span', p.repo), el('b', `${p.prs.total} PR`), el('u', p.lifecycle))
+    button.addEventListener('click', () => selectProject(agents.find((a) => a.id === p.repo) ?? null))
+    li.append(button)
+    return li
+  }))
+}
+
+function selectProject(a: Agent | null) {
+  picked = a
+  for (const button of $('#plegend').querySelectorAll<HTMLButtonElement>('button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.repo === a?.id))
+  }
+  const box = $('#project')
+  if (!a) return box.replaceChildren(el('p', 'Click a fish, rock, or seaweed to read the repository behind it.', 'hint'))
+  const p = a.project
+  const pulls = countPulls(p.prs.recent)
+  const issues = countIssues(p.issues.recent)
+  const who = el('p', '', 'who')
+  who.append(el('strong', p.name), el('span', `${p.repo} · ${a.kind}`))
+  const facts = el('dl')
+  const row = (label: string, value: string | Node) => {
+    const dd = el('dd')
+    if (typeof value === 'string') dd.textContent = value
+    else dd.append(value)
+    facts.append(el('dt', label), dd)
+  }
+  const since = Date.parse(p.created)
+  const years = Number.isFinite(since) ? (Date.now() - since) / 31_557_600_000 : 0
+  const projectLink = document.createElement('a')
+  projectLink.href = p.url
+  projectLink.target = '_blank'
+  projectLink.rel = 'noopener'
+  projectLink.textContent = p.repo
+  row('Project', projectLink)
+  row('Theme', p.theme)
+  row('Age', `${p.created.slice(0, 10)} · ${years.toFixed(1)} years old`)
+  row('Upkeep', `last push ${p.pushed.slice(0, 10)} · ${p.quietDays} days quiet · ${Math.round(p.activity * 100)}% recent activity`)
+  row('Lifecycle', p.lifecycle)
+  row('Bones', `${p.prs.total} pull requests · ${pulls.merged} merged · ${pulls.open} open · ${pulls.closed} closed in the latest ${p.prs.recent.length}`)
+  row('Scales', `${p.issues.total} issues · ${issues.open} open · ${issues.question} marked question in the latest ${p.issues.recent.length}`)
+  const recent = el('ol', '', 'recent')
+  for (const pr of p.prs.recent.slice(0, 5)) {
+    const li = el('li')
+    const label = pr.url ? document.createElement('a') : document.createElement('span')
+    if (pr.url) {
+      const link = label as HTMLAnchorElement
+      link.href = pr.url
+      link.target = '_blank'
+      link.rel = 'noopener'
+    }
+    label.textContent = `#${pr.number} ${pr.title}`
+    li.append(label, el('small', ` · ${pr.state}`))
+    recent.append(li)
+  }
+  box.replaceChildren(who, facts, el('h3', 'Latest pull requests'), recent)
+}
+
+async function loadProjects(input: string) {
+  const button = $<HTMLButtonElement>('#pload')
+  button.disabled = true
+  $('#error').textContent = 'Loading projects...'
+  try {
+    const set = await fetchProjects(input.trim() || DEFAULT_REPOS.join(' '))
+    projects = set
+    agents = placeProjects(set.projects)
+    picked = null
+    projectRev++
+    readout()
+    projectLegend()
+    selectProject(null)
+    $('#error').textContent = ''
+  } catch (err) {
+    $('#error').textContent = `Could not load projects: ${(err as Error).message}${projects ? ' The previous tank is still shown.' : ''}`
+    if (!projects) $('#preadout').textContent = 'No projects loaded. Each project costs three GitHub requests; without a token GitHub allows 60 an hour.'
+  } finally {
+    button.disabled = false
+  }
+}
+
+function showMode(next: 'ecosystem' | 'projects') {
+  mode = next
+  document.body.dataset.mode = next
+  $('#tab-eco').setAttribute('aria-pressed', String(next === 'ecosystem'))
+  $('#tab-projects').setAttribute('aria-pressed', String(next === 'projects'))
+  if (next === 'projects' && !projects) void loadProjects('')
+}
+
 // ---- The tank (every animation frame) -----------------------------------------------------------
 
 let anim = 0 // seconds of animation; stands still while paused
@@ -468,7 +602,29 @@ function frame(now: number) {
   requestAnimationFrame(frame)
   const dt = Math.min(0.1, (now - lastFrame) / 1000)
   lastFrame = now
-  if (!cur || !tank) return
+  if (!tank) return
+  if (mode === 'projects') {
+    if (projects && running) anim += dt
+    if (projects) drift(agents, dt, anim)
+    const items: ProjectDraw[] = agents.map((a) => ({ id: a.id, project: a.project, x: a.x, y: a.y, z: a.z, yaw: a.yaw }))
+    tank.drawProjects(items, anim, projectRev)
+    ctx.clearRect(0, 0, W, H)
+    ctx.font = '500 10px "Martian Mono Variable", ui-monospace, monospace'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    if (picked) {
+      const [x, y] = tank.projectScene(picked.x, picked.y, picked.z)
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.arc(x, y, 26, 0, TAU)
+      ctx.stroke()
+      ctx.fillStyle = '#fff'
+      ctx.fillText(picked.project.name, x, y - 34)
+    }
+    return
+  }
+  if (!cur) return
   const s = cur
   if (running) anim += dt
   const blend = Math.min(1, (now - arrived) / TICK_MS)
@@ -560,6 +716,13 @@ function frame(now: number) {
     ctx.restore()
   }
 }
+
+$('#tab-eco').addEventListener('click', () => showMode('ecosystem'))
+$('#tab-projects').addEventListener('click', () => showMode('projects'))
+$<HTMLFormElement>('#psource').addEventListener('submit', (e) => {
+  e.preventDefault()
+  void loadProjects($<HTMLInputElement>('#prepos').value)
+})
 
 use(demo)
 requestAnimationFrame(frame)

@@ -10,7 +10,7 @@ Git Aquarium is an artificial-life simulator that turns GitHub development activ
 
 The goal is to make software history visible, explorable, and explainable through **artificial life, reproducible replay, and evidence-based interpretation**.
 
-> **Project status: the four-week MVP is implemented.** Running today: a seeded, deterministic artificial-life simulation (foraging, energy, reproduction, inheritance, mutation, death), the Git-to-ecology mapping rules, an offline synthetic demo, import of one public GitHub repository, replay with pause, 1x / 2x / 4x speed, reset, and seed, organism inspection, lineage filtering, a population chart, and the Ecologist. The Ecologist explains by fixed rules unless a model key is supplied; the model path was tested against a stand-in server and has not been run against the real API. Measured results and known gaps are under [Validation results](#validation-results). Sections written in the future tense describe the original proposal, and each says where the implementation differs.
+> **Project status: the four-week MVP is implemented.** Running today: a seeded, deterministic artificial-life simulation (foraging, energy, reproduction, inheritance, mutation, death), the Git-to-ecology mapping rules, an offline synthetic demo, import of one public GitHub repository, replay with pause, 1x / 2x / 4x speed, reset, and seed, organism inspection, lineage filtering, a population chart, and the Ecologist. The Ecologist explains by fixed rules unless a model key is supplied; the model path was tested against a stand-in server and has not been run against the real API. Measured results and known gaps are under [Validation results](#validation-results). Sections written in the future tense describe the original proposal, and each says where the implementation differs. A second view, Projects, maps one repository to one body: pull requests as bones, issues as scales, and upkeep as movement.
 
 ## What you are watching
 
@@ -48,8 +48,22 @@ Move the pointer over the tank to shift the view.
 
 The population figures are simulated measurements from one seeded run. They are not benchmarks and say nothing about code quality.
 
-## The idea
+## Projects: one repository, one fish
 
+Projects is a second reading of the tank, switched by the `Projects` tab beside the title. Each repository becomes one body: a fish while it is maintained, a seaweed once it has not been pushed to for 90 days, and a rock once it is archived or untouched for a year.
+
+- **The spine is the project's theme**: the repository description, or its name when it has none.
+- **Each rib is a pull request.** Merged ribs are pale bone, open ribs amber, and closed-without-merge ribs slate. Up to sixty ribs are drawn so a large project does not turn into a white blur; the panel reports the full count.
+- **Each scale is an issue.** Closed issues are pale scales, open issues dark gaps in the coat, and issues labelled `question` are gold.
+- **Length and height follow the number of pull requests** on a log scale, so a project with 300 pull requests stays visible beside one with 20,500.
+- **Gloss and swim speed follow recent upkeep**: a project pushed to this week swims faster than one last touched in spring.
+- **Age is read in the panel, not in the tank**: creation date, years, last push, and the lifecycle decision with the date that decided it.
+
+Click a body to read its panel: project link and theme, age, upkeep, the bone split (merged, open, closed), the scale split (open issues, questions), and the five most recent pull requests with links. The reading bar counts projects, lifecycle states, pull requests, and issues.
+
+Data boundaries: each project costs three unauthenticated GitHub requests (the repository, the latest hundred pull requests, the latest hundred issues), and GitHub allows 60 an hour per address, so loading eight projects uses a third of an hour's budget. Totals are lower bounds from GitHub's page count; only the latest hundred of each list are drawn. When a project cannot be read its error is listed and the rest still load.
+
+## The idea
 A repository becomes an aquarium. Its branches provide the identities of organism lineages, and each lineage contains multiple simulated individuals. Commits introduce resources, pull requests create visible interactions, and supported CI results change the simulated environment according to explicit rules.
 
 The organisms also have their own lives. They compete for food, spend energy to move, and pass traits to their offspring. Git history supplies environmental inputs; the simulation determines how individuals respond.
@@ -183,6 +197,9 @@ flowchart TD
 - `src/tank.ts`: the 3D scene: sunlight with shadows, rippling light on the sand, depth haze, and four fish species, plants, and rocks modelled in code, so there are no downloaded art assets. It needs WebGL; without it the measurements and event log still work.
 - `src/explain.ts`: the Ecologist's rule-based explanation, the bounded summary a model is given, and the checks applied to a model's answer. Pure functions with no DOM or network.
 - `src/main.ts` and `src/style.css`: the page, controls, event log, organism panel, chart, and Ecologist panel. Motion is blended between simulation ticks at display frame rate. The two typefaces (Fraunces and Martian Mono) are bundled at build time, so the page still loads nothing from the network.
+- `src/projects.ts`: the Projects mode. Turns one public repository into a project: pull request totals and the latest hundred, issue totals and the latest hundred, upkeep from the last push, and the lifecycle decision. No DOM and no Three.js.
+- `src/fish.ts`: builds the body for a project: a spine for its theme, ribs for pull requests, scales for issues, and the rock and seaweed forms used by abandoned projects.
+- `src/fishschool.ts`: the small deterministic drift that moves project bodies in the tank.
 - `vite.config.ts`: the optional model endpoint, `POST /api/explain`, served by `pnpm dev` and `pnpm preview` only. The Anthropic SDK is a development dependency used here and nowhere in the page.
 
 The import calls GitHub's public REST API directly from the browser, so there is no server and no token. That limits it to GitHub's unauthenticated quota of 60 requests per hour (four per import plus one per lineage, so at most twelve) and to the 100 most recent commits, pull requests, and workflow runs; whatever is cut off is listed on screen. React, PixiJS, the workspace split, Fastify, Zod, IndexedDB, and Playwright were not needed to meet the MVP and have not been introduced: the page is plain TypeScript and DOM, the model endpoint is a few lines of dev-server middleware, nothing is saved between visits, and browser checks were run with a script driving headless Chrome rather than a test suite in the repository.

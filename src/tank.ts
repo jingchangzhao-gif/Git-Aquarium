@@ -3,6 +3,8 @@ import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { P, type Genome } from './sim'
+import { buildProject, disposeProject, updateWave } from './fish'
+import type { Project } from './projects'
 
 export const COLORS = ['#f08a2c', '#3f7fe0', '#f2cf3a', '#58b9a5', '#d9534f', '#8a63c9', '#9fc94f', '#e9a3b8'] // one per lineage
 const SHARED_FOOD = '#efe9da' // baseline food, which any lineage may eat
@@ -16,6 +18,14 @@ export interface Swimmer {
   energy: number // 0..1 of its capacity
   grown: number // 0..1, for growing in at birth and shrinking away at death
   dim: boolean // faded into the water while another lineage is being filtered on
+}
+
+// One repository drawn as a fish, a rock, or a clump of seaweed, placed in scene units.
+export interface ProjectDraw {
+  id: string
+  project: Project
+  x: number; y: number; z: number
+  yaw: number
 }
 
 const CLEAR = { top: '#7cc6dc', fog: '#1f6c8e', density: 0.066 }
@@ -345,10 +355,20 @@ export function createTank(canvas: HTMLCanvasElement) {
   const pale = new THREE.Color('#8d979b')
   const spot = new THREE.Vector3()
 
+  // Projects mode: one fish per repository, rebuilt only when the data behind the tank changes.
+  const projectsRoot = new THREE.Group()
+  projectsRoot.visible = false
+  scene.add(projectsRoot)
+  const projectCache = new Map<string, { rev: number; group: THREE.Group }>()
+
   return {
     // `time` is animation seconds (it stands still while paused); `stress` is 0..1 water stress.
     draw(swimmers: Swimmer[], food: { x: number; y: number; z: number; lineage: number }[], stress: number, time: number) {
       shared.uTime.value = time
+      updateWave(time)
+      projectsRoot.visible = false
+      for (const { mesh } of shoals) mesh.visible = true
+      pellets.visible = true
       shared.uRipplePower.value = THREE.MathUtils.lerp(0.9, 0.12, stress)
       sky.material.uniforms.top.value.set(CLEAR.top).lerp(tint.set(MURKY.top), stress)
       fog.color.set(CLEAR.fog).lerp(tint.set(MURKY.fog), stress)
@@ -416,6 +436,52 @@ export function createTank(canvas: HTMLCanvasElement) {
     // Where a simulation point lands on the canvas, in the canvas's own 0..width, 0..height units.
     project(x: number, y: number, z: number): [number, number] {
       place(spot, x, y, z).project(camera)
+      return [(spot.x * 0.5 + 0.5) * P.width, (0.5 - spot.y * 0.5) * P.height]
+    },
+    // Projects mode: one repository per shape. `rev` changes only when the data changes.
+    drawProjects(items: ProjectDraw[], time: number, rev: number) {
+      updateWave(time)
+      projectsRoot.visible = true
+      for (const { mesh } of shoals) mesh.visible = false
+      pellets.visible = false
+      sky.material.uniforms.top.value.set(CLEAR.top)
+      fog.color.set(CLEAR.fog)
+      fog.density = CLEAR.density
+      sun.intensity = 2.4
+      hemisphere.intensity = 1
+      shafts.forEach((mesh, i) => (mesh.material.opacity = 0.17 + 0.07 * Math.sin(time * 0.4 + i * 2)))
+
+      const keep = new Set(items.map((item) => item.id))
+      for (const [id, entry] of projectCache) {
+        if (keep.has(id)) continue
+        projectsRoot.remove(entry.group)
+        disposeProject(entry.group)
+        projectCache.delete(id)
+      }
+      for (const item of items) {
+        let entry = projectCache.get(item.id)
+        if (!entry || entry.rev !== rev) {
+          if (entry) {
+            projectsRoot.remove(entry.group)
+            disposeProject(entry.group)
+          }
+          entry = { rev, group: buildProject(item.project).group }
+          projectsRoot.add(entry.group)
+          projectCache.set(item.id, entry)
+        }
+        entry.group.position.set(item.x, item.y, item.z)
+        // The meshes face +x; `yaw` is measured toward +z, so the sign flips.
+        entry.group.rotation.set(0, -item.yaw, Math.sin(time * 0.8 + item.x) * 0.04)
+      }
+
+      look.lerp(pointer, 0.04)
+      camera.position.set(look.x * 0.9, 2.9 + look.y * 0.35, 8.8)
+      camera.lookAt(0, 2.0, -1.8)
+      renderer.render(scene, camera)
+    },
+    // Where a project fish's body centre lands on the overlay canvas.
+    projectScene(x: number, y: number, z: number): [number, number] {
+      spot.set(x, y, z).project(camera)
       return [(spot.x * 0.5 + 0.5) * P.width, (0.5 - spot.y * 0.5) * P.height]
     },
   }
