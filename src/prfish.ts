@@ -22,7 +22,7 @@ const eyeMaterial = new THREE.MeshStandardMaterial({ color: EYE, roughness: 0.2 
 
 // `size` comes from the number of lines changed; the stale fade is a per-fish copy of the shared skin.
 export function buildPullFish(pull: PullSummary): THREE.Group {
-  const size = pull.size
+  const size = pull.size * 1.25 // a little larger than the measurement, so eight fish read at a glance
   const half = 0.5 * size // nose at +half, tail at -half
   const height = 0.34 * size
   const width = 0.24 * size

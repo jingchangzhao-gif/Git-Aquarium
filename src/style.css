@@ -329,6 +329,8 @@ h3 { margin: 14px 0 6px; color: var(--dim); }
 /* !important: some of these elements set their own display by id, which would otherwise win */
 body[data-mode='ecosystem'] .projects-only { display: none !important; }
 body[data-mode='projects'] .eco-only { display: none !important; }
+body[data-view='pulls'] #project-panel { display: none !important; }
+body[data-view='repos'] #pull-panel { display: none !important; }
 
 #projects { animation: rise 0.7s 0.1s both; }
 #prepos { flex: 1; min-width: 0; padding: 10px 6px 10px 16px; }
@@ -337,7 +339,10 @@ body[data-mode='projects'] .eco-only { display: none !important; }
 #pnotices summary { cursor: pointer; font: 500 10.5px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
 #pnotices li { margin-top: 6px; padding-left: 12px; border-left: 1px solid var(--line); }
 
+#pback { margin-top: 10px; }
 #plegend { display: grid; gap: 2px; margin: 0 -8px; }
+#plegend li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; align-items: center; padding: 4px 8px; font: 400 11.5px var(--mono); }
+#plegend .swatch { display: block; width: 10px; height: 10px; border-radius: 50%; }
 #plegend button {
   all: unset;
   box-sizing: border-box;
@@ -358,11 +363,12 @@ body[data-mode='projects'] .eco-only { display: none !important; }
 #plegend b { color: var(--dim); font-weight: 400; }
 #plegend u { color: var(--dim); text-decoration: none; }
 
-#project dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin-top: 12px; font-size: 14px; }
-#project dt { padding-top: 3px; }
-#project .recent { display: grid; gap: 6px; margin-top: 10px; font-size: 13.5px; }
-#project .recent small { color: var(--dim); }
-#project .recent a { overflow-wrap: anywhere; }
+#project dl, #pull dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin-top: 12px; font-size: 14px; }
+#project dt, #pull dt { padding-top: 3px; }
+#project .recent, #pull .recent { display: grid; gap: 6px; margin-top: 10px; font-size: 13.5px; }
+#project .recent small, #pull .recent small { color: var(--dim); }
+#project .recent a, #pull .recent a { overflow-wrap: anywhere; }
+#show-pulls { margin-top: 14px; }
 
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
 @keyframes surface { from { opacity: 0; transform: translateX(10px); } }
