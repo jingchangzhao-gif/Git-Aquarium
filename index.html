@@ -65,6 +65,7 @@
             </div>
           </form>
           <p id="preadout"></p>
+          <button type="button" id="pback" class="ghost" hidden>← Back to projects</button>
           <details id="pnotices">
             <summary></summary>
             <ul></ul>
@@ -131,16 +132,20 @@
           <ul id="legend"></ul>
         </section>
         <section class="projects-only">
-          <h2>Projects <span>one repository per body · click to inspect</span></h2>
+          <h2>Projects <span id="plegend-hint">one repository per body · click to inspect</span></h2>
           <ul id="plegend"></ul>
         </section>
         <section class="eco-only">
           <h2>Organism</h2>
           <div id="organism"></div>
         </section>
-        <section class="projects-only">
+        <section class="projects-only" id="project-panel">
           <h2>Fish <span>bones, scales, and upkeep</span></h2>
           <div id="project"></div>
+        </section>
+        <section class="projects-only" id="pull-panel">
+          <h2>Pull request <span>one open pull request per fish</span></h2>
+          <div id="pull"></div>
         </section>
         <section class="eco-only">
           <h2>Repository events <span>and their rules</span></h2>
