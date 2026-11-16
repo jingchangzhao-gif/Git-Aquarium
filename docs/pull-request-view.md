@@ -15,7 +15,7 @@ Why: the repository view answers "what does this project look like"; the pull re
 The view reads `GET /repos/{owner}/{repo}/pulls?state=open&per_page=100&sort=updated&direction=desc`.
 
 - The total comes from the `Link` header (`rel="last"`) when present, otherwise from the list length; it is a lower bound and the panel says so.
-- At most **10** pull requests are drawn and enriched. Each one needs two more requests (reviews, check runs), so one repository costs `1 + 2 × 10 = 21` GitHub requests. Unauthenticated GitHub allows 60 an hour, so this layer is only opened on demand.
+- At most **8** pull requests are drawn and enriched. Each one needs three more requests (the detail for lines changed, reviews, and check runs), so one repository costs `1 + 3 × 8 = 25` GitHub requests. Unauthenticated GitHub allows 60 an hour, so this layer is only opened on demand.
 - Merged and closed pull requests are not drawn. The panel links to the repository's `pulls` page for those.
 
 ## D3. Every visible property is a measurement
@@ -44,7 +44,7 @@ The readout under the tank switches to:
 `18 open · 12 stale · 3 failing · 5 waiting for review`
 
 - open: total open pull requests in the repository (lower bound from page count).
-- stale / failing / waiting: counts over the drawn ten, and the line says `of 10` when the drawn set is smaller than the total.
+- stale / failing / waiting: counts over the drawn eight, and the line says `of 8` when the drawn set is smaller than the total.
 
 ## D6. Data boundaries stay visible
 
