@@ -23,7 +23,7 @@ const GAP = '#2b393d'
 const QUESTION = '#f2cf3a'
 const EYE = '#0c1921'
 
-function waving<T extends THREE.Material>(material: T, sway = false) {
+export function waving<T extends THREE.Material>(material: T, sway = false) {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uWave = wave
     shader.vertexShader = shader.vertexShader
