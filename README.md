@@ -63,6 +63,18 @@ Click a body to read its panel: project link and theme, age, upkeep, the bone sp
 
 Data boundaries: each project costs three unauthenticated GitHub requests (the repository, the latest hundred pull requests, the latest hundred issues), and GitHub allows 60 an hour per address, so loading eight projects uses 24 of them. Only the latest hundred of each list are drawn. For a large project the pull request total is marked "about": GitHub reports pages, not a count, so it is rounded up to the next hundred. The issue total is exact and comes from one search request per project. Search allows ten a minute; when it refuses, the total is marked "up to" and is only a limit. When a project cannot be read its error is listed and the rest still load.
 
+### Pull requests: one open pull request, one small fish
+
+Select a project and press **Show open pull requests**: the tank is replaced by that repository's open pull requests as a school of small fish. **Back to projects** returns.
+
+- **Length is the size of the change**: additions plus deletions on a log scale, capped at 2000 lines.
+- **Colour is the check state**: green when every check passed, red when one failed or timed out, amber while checks are queued or running, and blue when no checks could be read.
+- **A pull request nobody has touched for seven days fades**: the fish stays visible but pales, so stale work is obvious at a glance.
+- **The reading bar counts what is drawn**: open pull requests, how many were read, how many are stale, failing, and waiting for review.
+- Click a fish to read its title, author, age, size, checks, and review state, with a link to GitHub.
+
+Data boundaries: only open pull requests are drawn, merged and closed ones are not. The latest eight by update time are inspected; other open pull requests on the same repository are counted but not drawn. Each inspection costs three requests per pull request, so drilling in costs up to 25 requests and the same 60 an hour applies. When check runs or reviews cannot be read they show as `none`, not as passing.
+
 ## The idea
 
 A repository becomes an aquarium. Its branches provide the identities of organism lineages, and each lineage contains multiple simulated individuals. Commits introduce resources, pull requests create visible interactions, and supported CI results change the simulated environment according to explicit rules.

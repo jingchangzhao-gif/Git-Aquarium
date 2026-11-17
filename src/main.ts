@@ -8,6 +8,8 @@ import { explain, key, parseAnswer, summarize, unknownEvidence, type Answer, typ
 import { P, RULES, TRAITS, hashState, lifespanTicks, maxEnergy, type EventKind, type Organism, type State } from './sim'
 import { COLORS, createTank, silhouette, type ProjectDraw, type Swimmer } from './tank'
 import { DEFAULT_REPOS, countIssues, countPulls, fetchProjects, type Project, type ProjectSet } from './projects'
+import { readPulls, STALE_DAYS, type Check, type PullSet, type PullSummary } from './pulls'
+import { buildPullFish, PULL_COLORS } from './prfish'
 import { buildProject } from './fish'
 import { drift, placeProjects, type Agent } from './fishschool'
 import type { Command } from './worker'
@@ -70,6 +72,10 @@ let projects: ProjectSet | null = null
 let agents: Agent[] = []
 let picked: Agent | null = null
 let projectRev = 0 // bumped when the data changes, so the tank rebuilds its meshes once
+let view: 'repos' | 'pulls' = 'repos' // the projects mode drills into one repository's open pull requests
+let pullSet: PullSet | null = null
+let prSpots: { pull: PullSummary; x: number; y: number; z: number; yaw: number }[] = []
+let pickedPr: PullSummary | null = null
 
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
 const send = (c: Command) => worker.postMessage(c)
@@ -330,6 +336,17 @@ scene.addEventListener('click', (e) => {
   const px = (e.offsetX / scene.clientWidth) * W
   const py = (e.offsetY / scene.clientHeight) * H
   if (mode === 'projects') { // a project body is larger than a fish, so its hit area is wider
+    if (view === 'pulls') {
+      let best: (typeof prSpots)[number] | undefined
+      let near = 40
+      for (const spot of prSpots) {
+        const [x, y] = tank.projectScene(spot.x, spot.y, spot.z)
+        const d = Math.hypot(x - px, y - py)
+        if (d < near) { near = d; best = spot }
+      }
+      selectPull(best?.pull ?? null)
+      return
+    }
     let best: Agent | undefined
     let near = 40
     for (const a of agents) {
@@ -560,7 +577,110 @@ function selectProject(a: Agent | null) {
     li.append(label, el('small', ` · ${pr.state}`))
     recent.append(li)
   }
-  box.replaceChildren(who, facts, el('h3', 'Latest pull requests'), recent)
+  const show = el('button', 'Show open pull requests', 'ghost')
+  show.type = 'button'
+  show.id = 'show-pulls'
+  show.addEventListener('click', () => void openPulls(p))
+  box.replaceChildren(who, facts, el('h3', 'Latest pull requests'), recent, show)
+}
+
+// Up to eight small fish, parked in two rows so they stay in the camera's view.
+function placePulls(list: PullSummary[]) {
+  return list.map((pull, i) => ({
+    pull,
+    x: ((i % 4) - 1.5) * 1.6 + (i < 4 ? 0 : 0.5),
+    y: i < 4 ? 1.95 : 0.7,
+    z: -2.5 + (i % 2) * 0.2,
+    yaw: i % 2 ? 0.1 : Math.PI - 0.1,
+  }))
+}
+
+function pullReadout() {
+  if (!pullSet) return
+  const read = pullSet.pulls
+  const stale = read.filter((p) => p.staleDays >= STALE_DAYS).length
+  const failing = read.filter((p) => p.checks === 'fail').length
+  const waiting = read.filter((p) => p.review === 'requested').length
+  $('#preadout').textContent =
+    `${pullSet.total} open · ${read.length} read · ${stale} stale · ${failing} failing · ${waiting} waiting for review`
+  const notices = $<HTMLDetailsElement>('#pnotices')
+  notices.open = true
+  notices.firstElementChild!.textContent = `Data boundaries (${pullSet.notices.length})`
+  notices.lastElementChild!.replaceChildren(...pullSet.notices.map((n) => el('li', n)))
+}
+
+function pullLegend() {
+  const order: [Check, string][] = [
+    ['pass', 'checks passed'], ['fail', 'checks failing'], ['pending', 'checks pending'], ['unknown', 'checks unknown or not read'],
+  ]
+  $('#plegend').replaceChildren(...order.map(([checks, text]) => {
+    const li = el('li')
+    const swatch = el('span', '', 'swatch')
+    swatch.style.background = PULL_COLORS[checks]
+    li.append(swatch, el('span', text))
+    return li
+  }))
+  $('#plegend-hint').textContent = 'one open pull request per fish · click to inspect'
+}
+
+function selectPull(p: PullSummary | null) {
+  pickedPr = p
+  const box = $('#pull')
+  if (!p) return box.replaceChildren(el('p', 'Click a small fish to read its pull request.', 'hint'))
+  const who = el('p', '', 'who')
+  who.append(el('strong', `#${p.number}`), el('span', `opened by ${p.author}${p.draft ? ' · draft' : ''}`))
+  const facts = el('dl')
+  const row = (label: string, value: string | Node) => {
+    const dd = el('dd')
+    if (typeof value === 'string') dd.textContent = value
+    else dd.append(value)
+    facts.append(el('dt', label), dd)
+  }
+  const title = p.url ? document.createElement('a') : document.createElement('span')
+  if (title instanceof HTMLAnchorElement) Object.assign(title, { href: p.url, target: '_blank', rel: 'noopener' })
+  title.textContent = p.title
+  row('Title', title)
+  row('Age', `open since ${p.created.slice(0, 10)} · updated ${p.updated.slice(0, 10)} · ${p.staleDays} days since the last update`)
+  row('Size', `${p.lines.toLocaleString('en-US')} lines changed`)
+  row('Checks', p.checks)
+  row('Review', p.review === 'none' ? 'no review requested or recorded' : p.review)
+  box.replaceChildren(who, facts)
+}
+
+async function openPulls(project: Project) {
+  const button = $<HTMLButtonElement>('#show-pulls')
+  button.disabled = true
+  $('#error').textContent = `Reading open pull requests of ${project.repo}...`
+  try {
+    const set = await readPulls(project.repo)
+    pullSet = set
+    prSpots = placePulls(set.pulls)
+    pickedPr = null
+    view = 'pulls'
+    document.body.dataset.view = view
+    projectRev++
+    pullReadout()
+    pullLegend()
+    selectPull(null)
+    $('#pback').hidden = false
+    $('#error').textContent = ''
+  } catch (err) {
+    $('#error').textContent = `Could not read pull requests: ${(err as Error).message} The project tank is still shown.`
+  } finally {
+    button.disabled = false
+  }
+}
+
+function showRepos() {
+  view = 'repos'
+  document.body.dataset.view = view
+  pickedPr = null
+  projectRev++
+  readout()
+  projectLegend()
+  selectProject(picked)
+  selectPull(null)
+  $('#pback').hidden = true
 }
 
 async function loadProjects(input: string) {
@@ -572,6 +692,11 @@ async function loadProjects(input: string) {
     projects = set
     agents = placeProjects(set.projects)
     picked = null
+    pickedPr = null
+    view = 'repos'
+    document.body.dataset.view = view
+    $('#pback').hidden = true
+    selectPull(null)
     projectRev++
     readout()
     projectLegend()
@@ -590,7 +715,10 @@ function showMode(next: 'ecosystem' | 'projects') {
   document.body.dataset.mode = next
   $('#tab-eco').setAttribute('aria-pressed', String(next === 'ecosystem'))
   $('#tab-projects').setAttribute('aria-pressed', String(next === 'projects'))
-  if (next === 'projects' && !projects) void loadProjects('')
+  if (next === 'projects' && !projects) {
+    view = 'repos'
+    void loadProjects('')
+  }
 }
 
 // ---- The tank (every animation frame) -----------------------------------------------------------
@@ -605,16 +733,34 @@ function frame(now: number) {
   lastFrame = now
   if (!tank) return
   if (mode === 'projects') {
-    if (projects) { // this view has no replay to pause, so it always moves
-      anim += dt
-      drift(agents, dt, anim)
-    }
-    const items: ProjectDraw[] = agents.map((a) => ({ id: a.id, x: a.x, y: a.y, z: a.z, yaw: a.yaw, build: () => buildProject(a.project).group }))
+    anim += dt // this view has no replay to pause, so it always moves
+    if (view === 'repos' && projects) drift(agents, dt, anim)
+    const items: ProjectDraw[] = view === 'pulls'
+      ? prSpots.map((spot) => ({
+        id: `#${spot.pull.number}`,
+        x: spot.x, y: spot.y + Math.sin(anim * 0.7 + spot.pull.number) * 0.05, z: spot.z, yaw: spot.yaw,
+        build: () => buildPullFish(spot.pull),
+      }))
+      : agents.map((a) => ({ id: a.id, x: a.x, y: a.y, z: a.z, yaw: a.yaw, build: () => buildProject(a.project).group }))
     tank.drawProjects(items, anim, projectRev)
     ctx.clearRect(0, 0, W, H)
     ctx.font = '500 10px "Martian Mono Variable", ui-monospace, monospace'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
+    if (view === 'pulls') {
+      for (const spot of prSpots) {
+        const label = `#${spot.pull.number}`
+        const [x, y] = tank.projectScene(spot.x, spot.y - 0.55, spot.z)
+        const width = ctx.measureText(label).width + 12
+        ctx.fillStyle = spot.pull === pickedPr ? '#fff' : 'rgba(6, 22, 34, 0.72)'
+        ctx.beginPath()
+        ctx.roundRect(x - width / 2, y - 8, width, 16, 8)
+        ctx.fill()
+        ctx.fillStyle = spot.pull === pickedPr ? '#06141f' : '#e6eef0'
+        ctx.fillText(label, x, y + 0.5)
+      }
+      return
+    }
     // Every body carries its repository's name, or a rock could not be told from the scenery.
     for (const a of agents) {
       const [x, y] = tank.projectScene(a.x, a.y + (a.still ? 0.95 : -0.5 * a.project.size), a.z)
@@ -723,6 +869,7 @@ function frame(now: number) {
 
 $('#tab-eco').addEventListener('click', () => showMode('ecosystem'))
 $('#tab-projects').addEventListener('click', () => showMode('projects'))
+$('#pback').addEventListener('click', showRepos)
 $<HTMLFormElement>('#psource').addEventListener('submit', (e) => {
   e.preventDefault()
   void loadProjects($<HTMLInputElement>('#prepos').value)
