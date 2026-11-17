@@ -188,12 +188,12 @@ export function readProject(
   }
 }
 
-interface Reply {
+export interface Reply {
   body: unknown
   pages: number // the last page GitHub named, or 0 when there is only one
 }
 
-async function get(path: string): Promise<Reply> {
+export async function get(path: string): Promise<Reply> {
   const res = await fetch(API + path, {
     headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
   })
