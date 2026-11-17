@@ -378,7 +378,7 @@ The dataset a replay uses can be downloaded with **Save dataset** and reopened w
 
 Pushing to `main` builds the static bundle and deploys it to GitHub Pages (`.github/workflows/pages.yml`). The owner has to enable Pages once: **Settings -> Pages -> Source: GitHub Actions**. Once enabled the app is at `https://<owner>.github.io/Git-Aquarium/`.
 
-The production build uses base `/Git-Aquarium/`; `pnpm dev` keeps the root path. The hosted build is static and has no model endpoint, so the Ecologist answers by rule there and says so. Imports may use an optional GitHub token kept in tab memory; shared links never contain it. A shared aquarium uses query parameters (`?repo=owner/name&seed=1`); a saved dataset file is still the reproducible unit, because a link only reproduces an import while GitHub serves the same records.
+The production build uses base `/Git-Aquarium/`; `pnpm dev` keeps the root path. The hosted build is static and has no model endpoint, so the Ecologist answers by rule there and says so. Imports may use an optional GitHub token kept in tab memory; shared links never contain it. A shared aquarium uses query parameters (`?repo=owner/name&seed=1`): opening the link imports that repository and replays it with that seed, an invalid `repo` opens the demo, and loading a repository or changing the seed rewrites the address bar without adding history entries. A saved dataset file is still the reproducible unit, because a link only reproduces an import while GitHub serves the same records.
 
 ## Access and data handling
 

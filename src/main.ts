@@ -3,6 +3,7 @@ import '@fontsource-variable/fraunces/wght-italic.css'
 import '@fontsource-variable/martian-mono'
 import './style.css'
 import { importRepo, loadDataset, saveDataset, type Dataset } from './dataset'
+import { linkFor, readLink } from './link'
 import { demo } from './demo'
 import { explain, key, parseAnswer, repoAnswer, repoQuestion, summarize, unknownEvidence, type Answer, type Claim, type Context, type Sample } from './explain'
 import { P, RULES, TRAITS, hashState, lifespanTicks, maxEnergy, type EventKind, type Organism, type State } from './sim'
@@ -117,6 +118,12 @@ function load() {
   send({ load: { seed: Number($<HTMLInputElement>('#seed').value), lineages: data.branches.length, events: data.events } })
 }
 
+// A recorded dataset is what a link reproduces; the demo is not a repository.
+function syncLink() {
+  if (data.source !== 'recorded') return
+  history.replaceState(null, '', linkFor(data.repo, Number($<HTMLInputElement>('#seed').value), location.pathname))
+}
+
 function use(d: Dataset) {
   data = d
   focus = null
@@ -168,15 +175,15 @@ function use(d: Dataset) {
     return mark
   }))
   load()
+  syncLink()
 }
 
-$('#source').addEventListener('submit', async (e) => {
-  e.preventDefault()
+async function importFrom(input: string) {
   const button = $<HTMLButtonElement>('#import')
   button.disabled = true
   $('#error').textContent = 'Importing...'
   try {
-    const result = await importRepo($<HTMLInputElement>('#repo').value, {
+    const result = await importRepo(input, {
       days: Number($<HTMLSelectElement>('#days').value) || undefined,
       token: $<HTMLInputElement>('#token').value,
     })
@@ -187,6 +194,11 @@ $('#source').addEventListener('submit', async (e) => {
   } finally {
     button.disabled = false
   }
+}
+
+$('#source').addEventListener('submit', (e) => {
+  e.preventDefault()
+  void importFrom($<HTMLInputElement>('#repo').value)
 })
 $('#demo').addEventListener('click', () => use(demo))
 
@@ -215,6 +227,7 @@ $('#file').addEventListener('change', async () => {
 $('#controls').addEventListener('submit', (e) => {
   e.preventDefault()
   load()
+  syncLink()
 })
 $('#pause').addEventListener('click', (e) => {
   running = !running
@@ -907,5 +920,12 @@ $<HTMLFormElement>('#psource').addEventListener('submit', (e) => {
   void loadProjects($<HTMLInputElement>('#prepos').value)
 })
 
+// A shared link opens on its repository and seed; anything else opens the demo.
+const start = readLink(location.search)
+$<HTMLInputElement>('#seed').value = String(start.seed)
 use(demo)
+if (start.repo) {
+  $<HTMLInputElement>('#repo').value = start.repo
+  void importFrom(start.repo)
+}
 requestAnimationFrame(frame)
