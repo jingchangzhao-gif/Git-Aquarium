@@ -228,12 +228,14 @@ export function repoAnswer(kind: RepoQuestion, c: Context): Answer {
     const flaky = stats.flaky
     const workflowEvents = window.filter((e) => ci(e) || e.kind === 'COMMIT_OBSERVED')
     const workflowEvidence = refs(workflowEvents.length ? workflowEvents : window)
+    // GitHub run titles already name the workflow; some titles also carry the branch.
+    const where = (g: { name: string; branch: string }) => (g.name.includes(g.branch) ? g.name : `${g.name} on ${g.branch}`)
     const facts: Claim[] = groups.slice(0, 5).map((g) => ({
-      text: `${g.name} on ${g.branch}: ${g.failed} failures, ${g.passed} passes (${Math.round(g.rate * 100)}% of runs failed).`,
+      text: `${where(g)}: ${plural(g.failed, 'failure')}, ${plural(g.passed, 'pass')} (${Math.round(g.rate * 100)}% of runs failed).`,
       evidence: refs(window.filter((e) => ci(e) && e.group === g.group)),
     }))
     if (flaky.length) {
-      facts.push({ text: `Flaky groups: ${flaky.map((g) => `${g.name} on ${g.branch} ${plural(g.times, 'time')}`).join('; ')}.`, evidence: flaky.flatMap((g) => g.refs) })
+      facts.push({ text: `Flaky groups: ${flaky.map((g) => `${where(g)} ${plural(g.times, 'time')}`).join('; ')}.`, evidence: flaky.flatMap((g) => g.refs) })
     } else {
       facts.push({ text: 'No workflow failed and later passed with no commit on its branch in between.', evidence: workflowEvidence })
     }
@@ -242,7 +244,7 @@ export function repoAnswer(kind: RepoQuestion, c: Context): Answer {
       facts,
       rules,
       interpretation: groups.length
-        ? `${groups[0].name} on ${groups[0].branch} fails most often (${groups[0].failed} of ${groups[0].failed + groups[0].passed} runs).` +
+        ? `${where(groups[0])} fails most often (${groups[0].failed} of ${groups[0].failed + groups[0].passed} runs).` +
           (flaky.length ? ` ${plural(flaky.length, 'group')} ${flaky.length === 1 ? 'looks' : 'look'} flaky rather than broken: ${flaky.length === 1 ? 'it passes' : 'they pass'} again without a new commit.` : ' No group failed and then passed without a commit, so the failures look tied to the code rather than the runner.')
         : 'The window has no CI failures to rank.',
       interpretationEvidence: workflowEvidence,

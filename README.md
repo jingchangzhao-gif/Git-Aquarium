@@ -259,6 +259,8 @@ When the model is unavailable, the interface will identify its response as a rul
 
 **Current implementation.** By default no model is involved: `src/explain.ts` writes the answer from the recorded readings and labels it "Rule-based explanation". It looks back up to 1,200 ticks to the reading that differs most from the present, so a fall is measured from its peak.
 
+**Repository questions.** Four questions about the repository itself are answered by fixed rules, with no model: what changed in the window's last seven days, which pull requests are stuck, which workflow fails most and whether it looks flaky, and how long a pull request takes to merge. Each number cites the `kind:id` records behind it, and every answer states the window's boundaries: "this week" means the last seven days of the import, a pull request that merged before the window opened looks stuck, and flaky means a pass after a failure with no commit on that branch between the two runs. See `docs/ecologist-repository-answers.md`.
+
 To use a model, start the server with a key:
 
 ```bash

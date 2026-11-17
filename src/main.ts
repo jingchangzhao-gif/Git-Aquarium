@@ -4,7 +4,7 @@ import '@fontsource-variable/martian-mono'
 import './style.css'
 import { importRepo, type Dataset } from './dataset'
 import { demo } from './demo'
-import { explain, key, parseAnswer, summarize, unknownEvidence, type Answer, type Claim, type Context, type Sample } from './explain'
+import { explain, key, parseAnswer, repoAnswer, repoQuestion, summarize, unknownEvidence, type Answer, type Claim, type Context, type Sample } from './explain'
 import { P, RULES, TRAITS, hashState, lifespanTicks, maxEnergy, type EventKind, type Organism, type State } from './sim'
 import { COLORS, createTank, silhouette, type ProjectDraw, type Swimmer } from './tank'
 import { DEFAULT_REPOS, countIssues, countPulls, fetchProjects, type Project, type ProjectSet } from './projects'
@@ -435,26 +435,31 @@ function claims(title: string, list: Claim[]) {
 async function ask(question: string) {
   const context: Context = {
     repo: data.repo, source: data.source, branches: data.branches, notices: data.notices,
-    events: data.events.slice(0, cur?.cursor ?? 0), samples: [...samples], focus,
+    events: data.events.slice(0, cur?.cursor ?? 0), records: data.events, samples: [...samples], focus,
   }
-  let answer: Answer = explain(question, context)
-  let label = 'Rule-based explanation'
-  let note = 'No language model is configured, so fixed rules wrote this from the recorded readings.'
-  const summary = summarize(question, context)
-  try { // the optional model endpoint; without it, or on any failure, the rule-based answer stands
-    const res = await fetch('/api/explain', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(summary) })
-    const body = await res.json()
-    const parsed = res.ok ? parseAnswer(body.answer) : null
-    if (parsed && !unknownEvidence(parsed, summary.events.map((e) => e.ref)).length) {
-      answer = parsed
-      label = 'Model explanation'
-      note = `Written by ${String(body.model).slice(0, 60)} from a summary of the recorded readings. Every record it cites was checked against the dataset.`
-    } else if (parsed || res.status === 422) {
-      note = 'The model cited records that are not in this dataset, so its answer was discarded. Fixed rules wrote this instead.'
-    } else if (res.status !== 503) {
-      note = 'The model could not be reached, so fixed rules wrote this from the recorded readings.'
-    }
-  } catch { /* no endpoint here (static hosting or offline) */ }
+  const kind = repoQuestion(question)
+  let answer: Answer = kind ? repoAnswer(kind, context) : explain(question, context)
+  let label = kind ? 'Repository answer' : 'Rule-based explanation'
+  let note = kind
+    ? 'Computed from the imported records. No language model is involved, and the simulation rules do not take part.'
+    : 'No language model is configured, so fixed rules wrote this from the recorded readings.'
+  if (!kind) {
+    const summary = summarize(question, context)
+    try { // the optional model endpoint; without it, or on any failure, the rule-based answer stands
+      const res = await fetch('/api/explain', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(summary) })
+      const body = await res.json()
+      const parsed = res.ok ? parseAnswer(body.answer) : null
+      if (parsed && !unknownEvidence(parsed, summary.events.map((e) => e.ref)).length) {
+        answer = parsed
+        label = 'Model explanation'
+        note = `Written by ${String(body.model).slice(0, 60)} from a summary of the recorded readings. Every record it cites was checked against the dataset.`
+      } else if (parsed || res.status === 422) {
+        note = 'The model cited records that are not in this dataset, so its answer was discarded. Fixed rules wrote this instead.'
+      } else if (res.status !== 503) {
+        note = 'The model could not be reached, so fixed rules wrote this from the recorded readings.'
+      }
+    } catch { /* no endpoint here (static hosting or offline) */ }
+  }
   const li = el('li', '', 'new')
   const head = el('p', '', 'asked')
   head.append(el('span', label, `badge ${label === 'Model explanation' ? 'model' : 'rules'}`), el('strong', question))
