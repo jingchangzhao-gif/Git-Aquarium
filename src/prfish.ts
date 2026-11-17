@@ -8,7 +8,7 @@ export const PULL_COLORS: Record<Check, string> = {
   pass: '#6fd39a', // every check succeeded
   fail: '#e2705f', // at least one failure or timeout
   pending: '#f0b429', // queued or running
-  none: '#8ecbdc', // no check runs, or they could not be read
+  unknown: '#8ecbdc', // no check runs, or they could not be read; never a pass
 }
 const EYE = '#0c1921'
 
@@ -16,7 +16,7 @@ const skin = (color: string) => waving(new THREE.MeshStandardMaterial({
   color, transparent: true, opacity: 0.72, roughness: 0.3, metalness: 0.06, side: THREE.DoubleSide, depthWrite: false,
 }))
 const skins: Record<Check, THREE.MeshStandardMaterial> = {
-  pass: skin(PULL_COLORS.pass), fail: skin(PULL_COLORS.fail), pending: skin(PULL_COLORS.pending), none: skin(PULL_COLORS.none),
+  pass: skin(PULL_COLORS.pass), fail: skin(PULL_COLORS.fail), pending: skin(PULL_COLORS.pending), unknown: skin(PULL_COLORS.unknown),
 }
 const eyeMaterial = new THREE.MeshStandardMaterial({ color: EYE, roughness: 0.2 })
 

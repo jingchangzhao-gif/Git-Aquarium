@@ -38,7 +38,7 @@ describe('buildPullFish', () => {
     expect(colour('pass')).toBe(PULL_COLORS.pass.replace('#', ''))
     expect(colour('fail')).toBe(PULL_COLORS.fail.replace('#', ''))
     expect(colour('pending')).toBe(PULL_COLORS.pending.replace('#', ''))
-    expect(colour('none')).toBe(PULL_COLORS.none.replace('#', ''))
+    expect(colour('unknown')).toBe(PULL_COLORS.unknown.replace('#', ''))
   })
 
   it('fades a stale pull request without touching the shared skins', () => {
