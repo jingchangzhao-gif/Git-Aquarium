@@ -611,7 +611,7 @@ function pullReadout() {
 
 function pullLegend() {
   const order: [Check, string][] = [
-    ['pass', 'checks passed'], ['fail', 'checks failing'], ['pending', 'checks pending'], ['none', 'no checks read'],
+    ['pass', 'checks passed'], ['fail', 'checks failing'], ['pending', 'checks pending'], ['unknown', 'checks unknown or not read'],
   ]
   $('#plegend').replaceChildren(...order.map(([checks, text]) => {
     const li = el('li')
