@@ -43,10 +43,12 @@ test('a model answer is rejected when it is malformed or cites a record that doe
   expect(parseAnswer(good)).toEqual(good)
   expect(unknownEvidence(good, refs)).toEqual([])
   expect(unknownEvidence({ ...good, rules: [{ text: 'Invented.', evidence: ['CI_FAILED:not-a-real-run'] }] }, refs)).toEqual(['CI_FAILED:not-a-real-run'])
+  expect(unknownEvidence({ ...good, interpretationEvidence: ['CI_FAILED:not-a-real-run'] }, refs)).toEqual(['CI_FAILED:not-a-real-run'])
   expect(unknownEvidence(good, [])).toEqual([refs[0]]) // a real record that was not in the summary still does not count
 
   expect(parseAnswer(null)).toBeNull()
   expect(parseAnswer({ ...good, interpretation: 42 })).toBeNull()
+  expect(parseAnswer({ ...good, interpretationEvidence: 'not a list' })).toBeNull()
   expect(parseAnswer({ ...good, facts: [{ text: 'No evidence list.' }] })).toBeNull()
   expect(parseAnswer({ ...good, facts: 'not a list' })).toBeNull()
   expect(summarize('x'.repeat(500), c).question).toHaveLength(200) // the summary sent to a model is bounded
@@ -68,18 +70,25 @@ test('repository questions route away from the simulation and answer from the re
   expect(week.facts[0].text).toContain('imported window ends')
   expect(week.facts.length).toBeGreaterThan(2)
   expect(week.uncertainty.join(' ')).toContain('fictional demo data')
+  expect(week.facts.slice(1).every((fact) => fact.evidence.length > 0)).toBe(true)
+  expect(week.interpretationEvidence?.length).toBeGreaterThan(0)
   expect(unknownEvidence(week, refs)).toEqual([])
 
   const stuck = repoAnswer('stuck', c)
   expect(stuck.interpretation.length).toBeGreaterThan(0)
+  expect(stuck.interpretationEvidence?.length).toBeGreaterThan(0)
   expect(unknownEvidence(stuck, refs)).toEqual([])
 
   const flow = repoAnswer('workflow', c)
   expect(flow.facts.some((f) => /failures/.test(f.text))).toBe(true)
+  expect(flow.facts.every((fact) => fact.evidence.length > 0)).toBe(true)
+  expect(flow.interpretationEvidence?.length).toBeGreaterThan(0)
   expect(unknownEvidence(flow, refs)).toEqual([])
 
   const merge = repoAnswer('merge', c)
   expect(merge.interpretation).toMatch(/days|no paired/)
+  expect(merge.facts.every((fact) => fact.evidence.length > 0)).toBe(true)
+  expect(merge.interpretationEvidence?.length).toBeGreaterThan(0)
   expect(unknownEvidence(merge, refs)).toEqual([])
 
   // An imported window with no records answers without inventing facts.

@@ -66,7 +66,7 @@ describe('repositoryStats', () => {
   it('calls a workflow flaky only when a pass follows a failure with no commit in between', () => {
     const flaky = repositoryStats([failed('20', 1), passed('21', 2)])
     expect(flaky.flaky[0].times).toBe(1)
-    expect(flaky.flaky[0].refs).toEqual(['CI_FAILED:20'])
+    expect(flaky.flaky[0].refs).toEqual(['CI_FAILED:20', 'CI_PASSED:21'])
 
     const fixed = repositoryStats([failed('20', 1), commit('x', 2), passed('21', 3)])
     expect(fixed.flaky).toEqual([])

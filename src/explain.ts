@@ -27,6 +27,7 @@ export interface Answer {
   facts: Claim[] // imported records and recorded observations
   rules: Claim[] // mapping rules that actually ran
   interpretation: string
+  interpretationEvidence?: string[] // repository facts summarized by the interpretation
   uncertainty: string[]
 }
 
@@ -179,12 +180,15 @@ export function repoAnswer(kind: RepoQuestion, c: Context): Answer {
   const until = Date.parse(week.to)
 
   if (kind === 'week') {
+    const weekEvents = between(until - 2 * REPO_WEEK, until)
     const recent = between(since, until)
+    const weekEvidence = refs(weekEvents.length ? weekEvents : window)
+    const evidenceFor = (events: GitEvent[]) => refs(events.length ? events : weekEvents.length ? weekEvents : window)
     const facts: Claim[] = [
-      { text: `The imported window ends on ${day(stats.to)}, so this week means ${day(week.from)} to ${day(week.to)}.`, evidence: [] },
-      { text: `Commits: ${week.recent.commits}, ${move(week.recent.commits, week.previous.commits)} in the seven days before.`, evidence: refs(recent.filter((e) => e.kind === 'COMMIT_OBSERVED')) },
-      { text: `Pull requests opened: ${week.recent.opened} (${week.previous.opened} before); merged: ${week.recent.merged} (${week.previous.merged} before).`, evidence: refs(recent.filter((e) => e.kind === 'PR_OPENED' || e.kind === 'PR_MERGED')) },
-      { text: `CI recorded ${week.recent.failed} failures and ${week.recent.passed} passes (${week.previous.failed} failures and ${week.previous.passed} passes before).`, evidence: refs(recent.filter(ci)) },
+      { text: `The imported window ends on ${day(stats.to)}, so this week means ${day(week.from)} to ${day(week.to)}.`, evidence: refs([window[0], window[window.length - 1]]) },
+      { text: `Commits: ${week.recent.commits}, ${move(week.recent.commits, week.previous.commits)} in the seven days before.`, evidence: evidenceFor(weekEvents.filter((e) => e.kind === 'COMMIT_OBSERVED')) },
+      { text: `Pull requests opened: ${week.recent.opened} (${week.previous.opened} before); merged: ${week.recent.merged} (${week.previous.merged} before).`, evidence: evidenceFor(weekEvents.filter((e) => e.kind === 'PR_OPENED' || e.kind === 'PR_MERGED')) },
+      { text: `CI recorded ${week.recent.failed} failures and ${week.recent.passed} passes (${week.previous.failed} failures and ${week.previous.passed} passes before).`, evidence: evidenceFor(weekEvents.filter(ci)) },
     ]
     const busiest = week.recent.commits >= week.recent.merged && week.recent.commits >= week.recent.failed
       ? 'commits'
@@ -195,15 +199,18 @@ export function repoAnswer(kind: RepoQuestion, c: Context): Answer {
       interpretation: recent.length
         ? `Activity this week is ${move(week.recent.commits, week.previous.commits)} the week before; the strongest signal is ${busiest}.`
         : 'No record landed in the window\'s last seven days.',
+      interpretationEvidence: weekEvidence,
       uncertainty: [...caveats, `"This week" is the last seven days of the window, ending ${day(stats.to)}, not today; for an old repository those are different weeks.`],
     }
   }
 
   if (kind === 'stuck') {
     const stuck = stats.stuck
+    const pullEvents = window.filter((e) => e.kind === 'PR_OPENED' || e.kind === 'PR_MERGED')
+    const pullEvidence = refs(pullEvents.length ? pullEvents : window)
     const facts: Claim[] = stuck.length
       ? stuck.slice(0, 8).map((p) => ({ text: `#${p.number} "${p.title}" on ${p.branch} opened ${day(p.opened)} and has been open ${p.days} days.`, evidence: [p.ref] }))
-      : [{ text: 'Every pull request opened inside the window has a merge record inside it.', evidence: [] }]
+      : [{ text: 'Every pull request opened inside the window has a merge record inside it.', evidence: pullEvidence }]
     if (stuck.length > 8) facts.push({ text: `…and ${stuck.length - 8} more pull requests, ordered by age.`, evidence: stuck.slice(8).map((p) => p.ref) })
     return {
       facts,
@@ -211,6 +218,7 @@ export function repoAnswer(kind: RepoQuestion, c: Context): Answer {
       interpretation: stuck.length
         ? `${stuck.length} of ${plural(stats.counts.opened, 'pull request')} opened in the window ${stuck.length === 1 ? 'has' : 'have'} no merge record inside it; the oldest has been open ${stuck[0].days} days.`
         : 'No pull request opened inside the window is still without a merge record.',
+      interpretationEvidence: pullEvidence,
       uncertainty: [...caveats, 'A pull request that merged before the window opened looks stuck here: its merge record is missing, not absent from history.'],
     }
   }
@@ -218,16 +226,18 @@ export function repoAnswer(kind: RepoQuestion, c: Context): Answer {
   if (kind === 'workflow') {
     const groups = stats.workflows
     const flaky = stats.flaky
+    const workflowEvents = window.filter((e) => ci(e) || e.kind === 'COMMIT_OBSERVED')
+    const workflowEvidence = refs(workflowEvents.length ? workflowEvents : window)
     const facts: Claim[] = groups.slice(0, 5).map((g) => ({
       text: `${g.name} on ${g.branch}: ${g.failed} failures, ${g.passed} passes (${Math.round(g.rate * 100)}% of runs failed).`,
-      evidence: [...g.refs, ...refs(window.filter((e) => e.kind === 'CI_PASSED' && e.group === g.group).slice(-6))],
+      evidence: refs(window.filter((e) => ci(e) && e.group === g.group)),
     }))
     if (flaky.length) {
       facts.push({ text: `Flaky groups: ${flaky.map((g) => `${g.name} on ${g.branch} ${plural(g.times, 'time')}`).join('; ')}.`, evidence: flaky.flatMap((g) => g.refs) })
     } else {
-      facts.push({ text: 'No workflow failed and later passed with no commit on its branch in between.', evidence: [] })
+      facts.push({ text: 'No workflow failed and later passed with no commit on its branch in between.', evidence: workflowEvidence })
     }
-    if (!groups.length) facts.unshift({ text: 'No supported GitHub Actions result is in the window.', evidence: [] })
+    if (!groups.length) facts.unshift({ text: 'No supported GitHub Actions result is in the window.', evidence: workflowEvidence })
     return {
       facts,
       rules,
@@ -235,17 +245,19 @@ export function repoAnswer(kind: RepoQuestion, c: Context): Answer {
         ? `${groups[0].name} on ${groups[0].branch} fails most often (${groups[0].failed} of ${groups[0].failed + groups[0].passed} runs).` +
           (flaky.length ? ` ${plural(flaky.length, 'group')} ${flaky.length === 1 ? 'looks' : 'look'} flaky rather than broken: ${flaky.length === 1 ? 'it passes' : 'they pass'} again without a new commit.` : ' No group failed and then passed without a commit, so the failures look tied to the code rather than the runner.')
         : 'The window has no CI failures to rank.',
+      interpretationEvidence: workflowEvidence,
       uncertainty: [...caveats, 'Flaky here means one failure followed by a pass with no commit on that branch between them: evidence of instability, not proof.'],
     }
   }
 
   const m = stats.merges
-  const mergeRefs = refs(window.filter((e) => e.kind === 'PR_MERGED'))
+  const pullEvents = window.filter((e) => e.kind === 'PR_OPENED' || e.kind === 'PR_MERGED')
+  const mergeRefs = refs(pullEvents.length ? pullEvents : window)
   const facts: Claim[] = [
     { text: `${m.merged} pull requests have both an open and a merge record inside the window; ${m.unpaired} merges had no open record.`, evidence: mergeRefs },
-    { text: m.median === null ? 'No pull request has both records inside the window.' : `Median time to merge: ${m.median} days.`, evidence: [] },
+    { text: m.median === null ? 'No pull request has both records inside the window.' : `Median time to merge: ${m.median} days.`, evidence: mergeRefs },
   ]
-  if (m.early !== null && m.late !== null) facts.push({ text: `The earlier half of merged pull requests took ${m.early} days; the later half took ${m.late} days.`, evidence: [] })
+  if (m.early !== null && m.late !== null) facts.push({ text: `The earlier half of merged pull requests took ${m.early} days; the later half took ${m.late} days.`, evidence: mergeRefs })
   const trend = m.early === null || m.late === null
     ? ''
     : m.late > m.early * 1.2 ? ' Merges are getting slower.'
@@ -254,6 +266,7 @@ export function repoAnswer(kind: RepoQuestion, c: Context): Answer {
     facts,
     rules,
     interpretation: m.median === null ? 'The window has no paired pull request to measure.' : `A merged pull request takes about ${m.median} days here.${trend}`,
+    interpretationEvidence: mergeRefs,
     uncertainty: [...caveats, 'Pull requests opened before the window are counted as unpaired merges and left out of the median.'],
   }
 }
@@ -279,11 +292,21 @@ export function parseAnswer(value: unknown): Answer | null {
   const claims = (x: unknown): x is Claim[] =>
     Array.isArray(x) && x.length <= 12 && x.every((c) => c && text(c.text) && Array.isArray(c.evidence) && c.evidence.every(text))
   if (!v || !claims(v.facts) || !claims(v.rules) || !text(v.interpretation) || !Array.isArray(v.uncertainty) || !v.uncertainty.every(text)) return null
-  return { facts: v.facts, rules: v.rules, interpretation: v.interpretation, uncertainty: v.uncertainty.slice(0, 8) }
+  if (v.interpretationEvidence !== undefined && (!Array.isArray(v.interpretationEvidence) || !v.interpretationEvidence.every(text))) return null
+  return {
+    facts: v.facts,
+    rules: v.rules,
+    interpretation: v.interpretation,
+    ...(v.interpretationEvidence ? { interpretationEvidence: v.interpretationEvidence } : {}),
+    uncertainty: v.uncertainty.slice(0, 8),
+  }
 }
 
 // References that are not among the given records. A model answer with any of these is rejected.
 export function unknownEvidence(a: Answer, refs: Iterable<string>): string[] {
   const known = new Set(refs)
-  return [...a.facts, ...a.rules].flatMap((c) => c.evidence).filter((ref) => !known.has(ref))
+  return [
+    ...[...a.facts, ...a.rules].flatMap((c) => c.evidence),
+    ...(a.interpretationEvidence ?? []),
+  ].filter((ref) => !known.has(ref))
 }
