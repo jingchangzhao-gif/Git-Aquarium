@@ -46,7 +46,7 @@ export interface FlakyGroup {
   name: string
   branch: string
   times: number // failures that passed later with no commit on that branch in between
-  refs: string[] // the failing run refs
+  refs: string[] // the failure and subsequent pass refs
 }
 
 export interface MergeTime {
@@ -181,7 +181,7 @@ function flakyOf(events: GitEvent[]): FlakyGroup[] {
       by.set(key, group)
     }
     group.times++
-    group.refs.push(ref(fail))
+    group.refs.push(ref(fail), ref(e))
   }
   return [...by.values()].sort((a, b) => b.times - a.times)
 }

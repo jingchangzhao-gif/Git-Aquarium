@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { demo } from './demo'
-import { explain, key, parseAnswer, summarize, unknownEvidence, type Context, type Sample } from './explain'
+import { explain, key, parseAnswer, repoAnswer, repoQuestion, summarize, unknownEvidence, type Context, type Sample } from './explain'
 import { P, createState, step } from './sim'
 
 // The demo replayed to a tick, read once a simulated second, exactly as the page does.
@@ -43,12 +43,56 @@ test('a model answer is rejected when it is malformed or cites a record that doe
   expect(parseAnswer(good)).toEqual(good)
   expect(unknownEvidence(good, refs)).toEqual([])
   expect(unknownEvidence({ ...good, rules: [{ text: 'Invented.', evidence: ['CI_FAILED:not-a-real-run'] }] }, refs)).toEqual(['CI_FAILED:not-a-real-run'])
+  expect(unknownEvidence({ ...good, interpretationEvidence: ['CI_FAILED:not-a-real-run'] }, refs)).toEqual(['CI_FAILED:not-a-real-run'])
   expect(unknownEvidence(good, [])).toEqual([refs[0]]) // a real record that was not in the summary still does not count
 
   expect(parseAnswer(null)).toBeNull()
   expect(parseAnswer({ ...good, interpretation: 42 })).toBeNull()
+  expect(parseAnswer({ ...good, interpretationEvidence: 'not a list' })).toBeNull()
   expect(parseAnswer({ ...good, facts: [{ text: 'No evidence list.' }] })).toBeNull()
   expect(parseAnswer({ ...good, facts: 'not a list' })).toBeNull()
   expect(summarize('x'.repeat(500), c).question).toHaveLength(200) // the summary sent to a model is bounded
   expect(summarize('Why?', replay(2300)).events.length).toBeLessThanOrEqual(40)
+})
+
+test('repository questions route away from the simulation and answer from the records', () => {
+  const c: Context = { ...replay(600), records: demo.events }
+  const refs = demo.events.map(key)
+
+  expect(repoQuestion('What changed this week?')).toBe('week')
+  expect(repoQuestion('Which pull requests are stuck?')).toBe('stuck')
+  expect(repoQuestion('Which workflow fails most often?')).toBe('workflow')
+  expect(repoQuestion('How long does a pull request take to merge?')).toBe('merge')
+  expect(repoQuestion('Why did the population change?')).toBeNull() // still a simulation question
+  expect(repoQuestion('Why did the fish die?')).toBeNull()
+
+  const week = repoAnswer('week', c)
+  expect(week.facts[0].text).toContain('imported window ends')
+  expect(week.facts.length).toBeGreaterThan(2)
+  expect(week.uncertainty.join(' ')).toContain('fictional demo data')
+  expect(week.facts.slice(1).every((fact) => fact.evidence.length > 0)).toBe(true)
+  expect(week.interpretationEvidence?.length).toBeGreaterThan(0)
+  expect(unknownEvidence(week, refs)).toEqual([])
+
+  const stuck = repoAnswer('stuck', c)
+  expect(stuck.interpretation.length).toBeGreaterThan(0)
+  expect(stuck.interpretationEvidence?.length).toBeGreaterThan(0)
+  expect(unknownEvidence(stuck, refs)).toEqual([])
+
+  const flow = repoAnswer('workflow', c)
+  expect(flow.facts.some((f) => /failures/.test(f.text))).toBe(true)
+  expect(flow.facts.every((fact) => fact.evidence.length > 0)).toBe(true)
+  expect(flow.interpretationEvidence?.length).toBeGreaterThan(0)
+  expect(unknownEvidence(flow, refs)).toEqual([])
+
+  const merge = repoAnswer('merge', c)
+  expect(merge.interpretation).toMatch(/days|no paired/)
+  expect(merge.facts.every((fact) => fact.evidence.length > 0)).toBe(true)
+  expect(merge.interpretationEvidence?.length).toBeGreaterThan(0)
+  expect(unknownEvidence(merge, refs)).toEqual([])
+
+  // An imported window with no records answers without inventing facts.
+  const empty = repoAnswer('week', { ...c, records: [] })
+  expect(empty.facts).toEqual([])
+  expect(empty.interpretation).toContain('No repository records')
 })
