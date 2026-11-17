@@ -466,7 +466,7 @@ async function ask(question: string) {
   li.append(
     head, el('small', note),
     ...claims('Facts', answer.facts), ...claims('Applied rules', answer.rules),
-    el('h3', 'Interpretation'), el('p', answer.interpretation),
+    ...claims('Interpretation', [{ text: answer.interpretation, evidence: answer.interpretationEvidence ?? [] }]),
     el('h3', 'Uncertainty'), (() => { const ul = el('ul'); ul.append(...answer.uncertainty.map((u) => el('li', u))); return ul })(),
   )
   $('#answers').prepend(li)
