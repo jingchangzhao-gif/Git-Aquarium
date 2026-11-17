@@ -374,11 +374,17 @@ Without a token, an import may spend 40 of the 60 requests GitHub allows each ho
 
 The dataset a replay uses can be downloaded with **Save dataset** and reopened with **Open dataset**, without network access. The file carries a format id and version, so a foreign or older file is rejected with a readable message and the loaded dataset is kept. A saved dataset is the reproducible unit: same file, same seed, same state at the same tick.
 
+### Hosted demo
+
+Pushing to `main` builds the static bundle and deploys it to GitHub Pages (`.github/workflows/pages.yml`). The owner has to enable Pages once: **Settings -> Pages -> Source: GitHub Actions**. Once enabled the app is at `https://<owner>.github.io/Git-Aquarium/`.
+
+The production build uses base `/Git-Aquarium/`; `pnpm dev` keeps the root path. The hosted build is static and has no model endpoint, so the Ecologist answers by rule there and says so. Imports may use an optional GitHub token kept in tab memory; shared links never contain it. A shared aquarium uses query parameters (`?repo=owner/name&seed=1`); a saved dataset file is still the reproducible unit, because a link only reproduces an import while GitHub serves the same records.
+
 ## Access and data handling
 
 The MVP will read public repositories only and will not modify code, create commits in imported repositories, merge pull requests, or delete branches.
 
-Optional GitHub and model credentials will remain on the server. Repository text will be treated as untrusted data, and model requests will use structured summaries rather than source-code uploads. Today no GitHub credential is used at all, and the optional model key is read from the environment of the local dev server and never reaches the page.
+An optional GitHub token is kept in the current tab's memory, sent only to `api.github.com`, and never written to storage or a URL. Repository text will be treated as untrusted data, and model requests will use structured summaries rather than source-code uploads. The optional model key is read from the local dev server environment and never reaches the page.
 
 ## Inspiration and license
 

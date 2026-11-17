@@ -30,7 +30,8 @@ and there is no address to send anyone.
 
 5. **The hosted build has no model endpoint.** The Ecologist answers by rule and already labels that
    ("No language model is configured, so fixed rules wrote this from the recorded readings"). This is
-   the intended hosted behaviour, not a degradation to hide.
+   the intended hosted behaviour, not a degradation to hide. Imports may use the optional GitHub token
+   added for issue #8; it stays in tab memory and is not included in shared links.
 
 6. **Scheduled image or loop rendering in an Action is out of this cut.** It needs WebGL under
    software rendering, which is the uncertain part, and it is separable from publishing. A 2D renderer
@@ -39,7 +40,8 @@ and there is no address to send anyone.
 
 ## Boundaries stated in the app and README
 
-- The hosted app is the same app: no server, no key, no saved visitor data.
+- The hosted app is static: no server or model key, and no saved visitor data. A user may enter an
+  optional GitHub token for an import; it stays in tab memory and never enters the URL.
 - A link reproduces an import only while GitHub still serves the same records. A saved dataset file is
   the reproducible unit; a link is a convenience.
 - An import from a link spends the same requests as a typed import (40 of the unauthenticated 60 an
