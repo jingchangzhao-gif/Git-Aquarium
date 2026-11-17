@@ -1,6 +1,14 @@
-import { expect, test } from 'vitest'
-import { DATASET_FORMAT, DATASET_VERSION, fromGitHub, loadDataset, saveDataset } from './dataset'
+import { afterEach, expect, test, vi } from 'vitest'
+import { DATASET_FORMAT, DATASET_VERSION, fromGitHub, importRepo, loadDataset, saveDataset } from './dataset'
 import { demo } from './demo'
+
+afterEach(() => vi.unstubAllGlobals())
+
+const canned = (remaining?: string) => () =>
+  Promise.resolve(new Response(JSON.stringify({ default_branch: 'main' }), {
+    status: 200,
+    headers: remaining ? { 'x-ratelimit-remaining': remaining } : {},
+  }))
 
 const wrap = (dataset: unknown) => JSON.stringify({ format: DATASET_FORMAT, version: DATASET_VERSION, dataset })
 
@@ -49,4 +57,30 @@ test('a malformed dataset is rejected instead of half-loading', () => {
   expect(() => loadDataset(withEvents([{ ...demo.events[0], branches: 'main' }]))).toThrow(/branches/)
   expect(() => loadDataset(withEvents([{ ...demo.events[0], url: 42 }]))).toThrow(/url/)
   expect(() => loadDataset(withEvents([{ ...demo.events[0], url: 'javascript:alert(1)' }]))).toThrow(/url/)
+})
+
+test('a token is sent only as an Authorization header and raises the default budget', async () => {
+  const headers: Headers[] = []
+  vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+    headers.push(new Headers(init.headers))
+    return canned('4999')()
+  })
+  const result = await importRepo('o/r', { token: 'secret', days: 30 })
+  expect(result.budget).toBe(200)
+  expect(result.limit).toBe(4999)
+  expect(headers.length).toBeGreaterThan(2)
+  expect(headers.every((h) => h.get('authorization') === 'Bearer secret')).toBe(true)
+  expect(JSON.stringify(result.dataset)).not.toContain('secret') // a token never lands in the dataset
+  expect(result.dataset.notices.join(' ')).toMatch(/30 days/)
+})
+
+test('without a token the default budget stays 40 and no Authorization header is sent', async () => {
+  const headers: Headers[] = []
+  vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+    headers.push(new Headers(init.headers))
+    return canned()()
+  })
+  const result = await importRepo('o/r')
+  expect(result.budget).toBe(40)
+  expect(headers.every((h) => h.get('authorization') === null)).toBe(true)
 })

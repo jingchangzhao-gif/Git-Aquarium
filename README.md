@@ -366,6 +366,14 @@ pnpm build   # type-check and production build
 
 The app opens on the synthetic demo, which needs no network access. To replay a real project, enter a public repository as `owner/repo` or a github.com URL and press Import. Reset replays the same frozen dataset from the same seed.
 
+### How deep an import goes
+
+An import reads a **window** — 30, 90, or 365 days before the moment you press Import — rather than one page per source. Each source is read newest first until it passes the window start or the import's request **budget** is spent. The data boundaries panel states the window edge, which limit stopped pagination, and how many requests the import used.
+
+Without a token, an import may spend 40 of the 60 requests GitHub allows each hour. A fine-grained read-only token raises the limit to 5,000 an hour and raises the import budget to 200; it is kept in that tab's memory only, never written to storage or a URL, and sent only to `api.github.com`. A token pasted into a page is visible to any script running in that page.
+
+The dataset a replay uses can be downloaded with **Save dataset** and reopened with **Open dataset**, without network access. The file carries a format id and version, so a foreign or older file is rejected with a readable message and the loaded dataset is kept. A saved dataset is the reproducible unit: same file, same seed, same state at the same tick.
+
 ## Access and data handling
 
 The MVP will read public repositories only and will not modify code, create commits in imported repositories, merge pull requests, or delete branches.

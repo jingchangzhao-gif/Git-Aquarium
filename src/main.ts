@@ -176,9 +176,12 @@ $('#source').addEventListener('submit', async (e) => {
   button.disabled = true
   $('#error').textContent = 'Importing...'
   try {
-    const result = await importRepo($<HTMLInputElement>('#repo').value)
+    const result = await importRepo($<HTMLInputElement>('#repo').value, {
+      days: Number($<HTMLSelectElement>('#days').value) || undefined,
+      token: $<HTMLInputElement>('#token').value,
+    })
     use(result.dataset)
-    $('#error').textContent = ''
+    $('#error').textContent = `Imported with ${result.requests} of ${result.budget} requests.`
   } catch (err) {
     $('#error').textContent = `Import failed: ${(err as Error).message} The previous dataset is still loaded.`
   } finally {

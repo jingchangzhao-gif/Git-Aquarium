@@ -184,11 +184,13 @@ export function loadDataset(text: string): Dataset {
 const DAY = 86_400_000
 export const DEFAULT_DAYS = 90
 export const DEFAULT_BUDGET = 40
+export const TOKEN_BUDGET = 200 // a token gives 5,000 an hour; one import may use a fraction
 const MAX_PAGES = 20 // a window can ask for a lot of pages; the budget is the real limit
 
 export interface ImportOptions {
   days?: number // window ending at import time
   budget?: number // requests this import may spend
+  token?: string // read-only token, kept in memory; raises the ceiling and the default budget
 }
 
 export interface ImportResult {
@@ -206,7 +208,8 @@ export async function importRepo(input: string, options: ImportOptions = {}): Pr
   const repo = input.trim().match(/^(?:https?:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1]
   if (!repo) throw new Error('Enter a public repository as owner/repo or a github.com URL.')
   const days = options.days ?? DEFAULT_DAYS
-  const budget = options.budget ?? DEFAULT_BUDGET
+  const token = options.token?.trim() ?? ''
+  const budget = options.budget ?? (token ? TOKEN_BUDGET : DEFAULT_BUDGET)
   const start = Date.now() - days * DAY
   let used = 0
   let limit: number | null = null
@@ -216,14 +219,21 @@ export async function importRepo(input: string, options: ImportOptions = {}): Pr
     if (used >= budget) return null
     used++
     const res = await fetch(`https://api.github.com/repos/${repo}${path}`, {
-      headers: { Accept: 'application/vnd.github+json' },
+      headers: {
+        Accept: 'application/vnd.github+json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     })
     const left = Number(res.headers.get('x-ratelimit-remaining'))
     if (Number.isFinite(left)) limit = left
     if (res.status === 404) throw new Error('Repository not found, or it is private.')
     if (res.status === 403 || res.status === 429) {
-      throw new Error(`GitHub rate limit reached (${limit ?? '?'} requests left this hour). Try again later.`)
+      throw new Error(
+        `GitHub rate limit reached (${limit ?? '?'} requests left this hour). ` +
+        (token ? 'The token may be expired or may not be allowed to read this repository.' : 'Add a token for 5,000 requests an hour.'),
+      )
     }
+    if (res.status === 401) throw new Error('GitHub rejected the token. Check that it is current and read-only.')
     if (!res.ok) throw new Error(`GitHub returned ${res.status}.`)
     return res.json()
   }
