@@ -179,12 +179,13 @@ test('GitHub import: attributes events to branches, dedupes, and reports what is
   expect(d.notices.join(' ')).toMatch(/2 pull requests and workflow runs were on branches that are not shown as lineages/)
 
   const many = Array.from({ length: 100 }, (_, i) => commit(`s${i}`, new Date(Date.UTC(2026, 1, 1 + i)).toISOString()))
+  const window = Date.parse('2026-02-01T00:00:00Z')
   const cut = fromGitHub('o/r', {
     repo: { default_branch: 'main' }, branches: [{ name: 'main' }], commits: { main: many }, runs: null,
     pulls: [{ number: 1, created_at: '2025-01-01T00:00:00Z', head: { ref: 'old' }, base: { ref: 'main' } }],
-  })
-  expect(cut.events).toHaveLength(100) // the PR predates the truncated commit window, so it is left out and reported
-  expect(cut.notices.join(' ')).toMatch(/Only the 100 most recent commits on main.*1 older records were left out/)
+  }, window, ['window note'])
+  expect(cut.events).toHaveLength(100) // every commit is inside the window; the pull request predates it
+  expect(cut.notices[0]).toBe('window note')
   expect(cut.notices.join(' ')).toMatch(/Actions data was unavailable/)
 
   const busy = fromGitHub('o/r', { // more branches than lineages: the busiest are kept

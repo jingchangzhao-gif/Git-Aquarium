@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { DATASET_FORMAT, DATASET_VERSION, loadDataset, saveDataset } from './dataset'
+import { DATASET_FORMAT, DATASET_VERSION, fromGitHub, loadDataset, saveDataset } from './dataset'
 import { demo } from './demo'
 
 const wrap = (dataset: unknown) => JSON.stringify({ format: DATASET_FORMAT, version: DATASET_VERSION, dataset })
@@ -8,6 +8,24 @@ test('a saved dataset reopens into the same frozen records', () => {
   const back = loadDataset(saveDataset(demo))
   expect(back).toEqual(demo)
   expect(loadDataset(saveDataset(back))).toEqual(back) // saving again is stable
+})
+
+test('fromGitHub keeps only records inside the chosen window', () => {
+  const commit = (sha: string, date: string) => ({
+    sha, commit: { committer: { date }, message: sha }, html_url: null,
+  })
+  const api = {
+    repo: { default_branch: 'main' },
+    branches: [{ name: 'main' }],
+    pulls: [],
+    runs: [],
+    commits: { main: [commit('old', '2026-01-01T00:00:00Z'), commit('new', '2026-03-01T00:00:00Z')] },
+  }
+  const window = Date.parse('2026-02-01T00:00:00Z')
+  const d = fromGitHub('a/b', api, window, ['window note'])
+  expect(d.events.map((e) => e.id)).toEqual(['new'])
+  expect(d.notices[0]).toBe('window note')
+  expect(d.events[0].tick).toBe(100) // one event still starts after the warmup
 })
 
 test('a file that is not a dataset is rejected with a readable reason', () => {
