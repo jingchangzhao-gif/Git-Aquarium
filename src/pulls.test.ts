@@ -22,10 +22,10 @@ describe('checkOf', () => {
   it('reads pending, passing, and empty sets', () => {
     expect(checkOf([{ status: 'queued', conclusion: null }])).toBe('pending')
     expect(checkOf([{ status: 'completed', conclusion: 'success' }, { status: 'completed', conclusion: 'skipped' }])).toBe('pass')
-    expect(checkOf([])).toBe('none')
-    expect(checkOf(null)).toBe('none')
+    expect(checkOf([])).toBe('unknown')
+    expect(checkOf(null)).toBe('unknown')
     // Unknown conclusions are not a pass.
-    expect(checkOf([{ status: 'completed', conclusion: 'stale' }])).toBe('none')
+    expect(checkOf([{ status: 'completed', conclusion: 'stale' }])).toBe('unknown')
   })
 })
 
@@ -92,7 +92,7 @@ describe('readPulls', () => {
     }))
     try {
       const set = await readPulls('o/r', NOW)
-      expect(set.pulls[0].checks).toBe('none')
+      expect(set.pulls[0].checks).toBe('unknown')
       expect(set.notices.some((n) => n.includes('unknown, not passing'))).toBe(true)
     } finally {
       vi.unstubAllGlobals()

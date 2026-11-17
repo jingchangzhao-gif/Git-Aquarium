@@ -1,7 +1,7 @@
 // Turns open pull requests into fish-sized measurements. No DOM, no three, no storage.
 import { get } from './projects'
 
-export type Check = 'pass' | 'fail' | 'pending' | 'none'
+export type Check = 'pass' | 'fail' | 'pending' | 'unknown'
 export type Review = 'requested' | 'approved' | 'changes' | 'none'
 
 export interface PullSummary {
@@ -46,15 +46,15 @@ export function sizeOfLines(lines: number): number {
   return 0.6 + 0.5 * (Math.log2(1 + clamped) / Math.log2(1 + MAX_LINES))
 }
 
-// A failure anywhere outranks a run still in progress; an empty set is not success.
+// A failure anywhere outranks a run still in progress; missing or unrecognized data is never success.
 export function checkOf(runs: Json[] | null): Check {
-  if (!runs || runs.length === 0) return 'none'
+  if (!runs || runs.length === 0) return 'unknown'
   const failed = runs.some((r) => ['failure', 'timed_out', 'cancelled', 'action_required'].includes(text(r.conclusion, 40)))
   if (failed) return 'fail'
   const pending = runs.some((r) => ['queued', 'in_progress', 'requested', 'waiting', 'pending'].includes(text(r.status, 40)))
   if (pending) return 'pending'
   const passed = runs.every((r) => ['success', 'neutral', 'skipped'].includes(text(r.conclusion, 40)))
-  return passed ? 'pass' : 'none'
+  return passed ? 'pass' : 'unknown'
 }
 
 // Who is waiting: a pending request wins; otherwise the latest decisive review.
@@ -85,7 +85,7 @@ export async function readPulls(repo: string, now = Date.now()): Promise<PullSet
       get(`/repos/${repo}/pulls/${number}/reviews?per_page=30`).catch(() => null),
       sha ? get(`/repos/${repo}/commits/${sha}/check-runs?per_page=100`).catch(() => null) : null,
     ])
-    if (!detail || !reviews) unknown++
+    if (!detail || !reviews || !runs) unknown++
     const updated = date(p.updated_at)
     const staleDays = updated ? Math.max(0, Math.floor((now - Date.parse(updated)) / DAY)) : 0
     const lines = num(obj(detail?.body).additions) + num(obj(detail?.body).deletions)
@@ -98,7 +98,7 @@ export async function readPulls(repo: string, now = Date.now()): Promise<PullSet
       updated,
       draft: p.draft === true,
       lines,
-      checks: runs ? checkOf(list(obj(runs.body).check_runs)) : 'none',
+      checks: runs ? checkOf(list(obj(runs.body).check_runs)) : 'unknown',
       review: reviewOf(reviews ? list(reviews.body) : null, requested),
       staleDays,
       size: sizeOfLines(lines),
@@ -107,7 +107,7 @@ export async function readPulls(repo: string, now = Date.now()): Promise<PullSet
 
   const total = opening.pages ? opening.pages * 100 : raw.length
   notices.push('Only the most recently updated open pull requests were inspected; the counts cover those.')
-  if (unknown > 0) notices.push(`Check runs or reviews were unavailable for ${unknown} pull requests; they show as unknown, not passing.`)
+  if (unknown > 0) notices.push(`Pull request details, check runs, or reviews were unavailable for ${unknown} pull requests; unavailable check states show as unknown, not passing.`)
   notices.push('Open pull requests only: merged and closed ones are not drawn.')
   return { repo, pulls, total, notices, at: now }
 }
