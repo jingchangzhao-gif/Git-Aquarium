@@ -190,11 +190,13 @@ export function loadDataset(text: string): Dataset {
     if (typeof e.id !== 'string' || !e.id) throw new Error('The dataset has an event without an id.')
     if (typeof e.at !== 'string' || Number.isNaN(Date.parse(e.at))) throw new Error('The dataset has an event without a usable date.')
     if (!Number.isFinite(e.tick) || !Number.isInteger(e.tick)) throw new Error('The dataset has an event without a tick.')
-    if (!Number.isInteger(e.lineage)) throw new Error('The dataset has an event without a lineage.')
+    if (!Number.isInteger(e.lineage) || e.lineage < 0) throw new Error('The dataset has an event without a lineage.')
     if (!strings(e.branches)) throw new Error('The dataset has an event without branches.')
     if (e.lineage >= d.branches.length) throw new Error('The dataset has an event on a lineage that does not exist.')
     if (typeof e.title !== 'string') throw new Error('The dataset has an event without a title.')
-    if (e.url !== null && typeof e.url !== 'string') throw new Error('The dataset has an event with a malformed url.')
+    if (e.url !== null && (typeof e.url !== 'string' || link(e.url) !== e.url)) {
+      throw new Error('The dataset has an event with a malformed url.')
+    }
   }
   return d
 }

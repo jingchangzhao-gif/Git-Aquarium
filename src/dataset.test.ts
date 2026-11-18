@@ -27,6 +27,8 @@ test('a malformed dataset is rejected instead of half-loading', () => {
   expect(() => loadDataset(withEvents([{ ...demo.events[0], tick: 'x' }]))).toThrow(/tick/)
   expect(() => loadDataset(withEvents([{ ...demo.events[0], at: 'never' }]))).toThrow(/date/)
   expect(() => loadDataset(withEvents([{ ...demo.events[0], lineage: 99 }]))).toThrow(/lineage/)
+  expect(() => loadDataset(withEvents([{ ...demo.events[0], lineage: -1 }]))).toThrow(/lineage/)
   expect(() => loadDataset(withEvents([{ ...demo.events[0], branches: 'main' }]))).toThrow(/branches/)
   expect(() => loadDataset(withEvents([{ ...demo.events[0], url: 42 }]))).toThrow(/url/)
+  expect(() => loadDataset(withEvents([{ ...demo.events[0], url: 'javascript:alert(1)' }]))).toThrow(/url/)
 })
