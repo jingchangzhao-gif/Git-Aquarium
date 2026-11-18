@@ -36,7 +36,8 @@ and there is no address to send anyone.
 6. **Scheduled image or loop rendering in an Action is out of this cut.** It needs WebGL under
    software rendering, which is the uncertain part, and it is separable from publishing. A 2D renderer
    for the image is the recorded fallback; a test of headless software WebGL is the first step if it
-   is picked up.
+   is picked up. Until then, **Save picture** in the corner of the tank saves the current view as a
+   PNG by hand, which covers a README image that does not need to update itself.
 
 ## Boundaries stated in the app and README
 

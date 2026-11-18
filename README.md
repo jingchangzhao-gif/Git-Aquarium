@@ -2,7 +2,7 @@
 
 **Your repository is an ecosystem. Your code is alive.**
 
-![Timelapse of the built-in demo in a 3D aquarium: each branch is its own kind of fish and is fed in its own colour as commits arrive. When CI fails on three branches their fish thin out while the fourth branch carries on, then the main branch recovers as fixes and merges land. One fish is followed in the side panel until it starves, and a chart tracks each lineage.](docs/demo.gif)
+![Timelapse of the built-in demo in a 3D aquarium: each branch is its own kind of fish and is fed in its own colour as commits arrive. When CI fails on three branches their water turns murky and their fish thin out while the fourth branch carries on, then the main branch recovers as fixes and merges land. One fish is followed in the side panel until it dies of old age, the lineages' inherited traits are tabled beside the tank, and a chart tracks each lineage.](docs/demo.gif)
 
 *The built-in demo as a timelapse: 30 days of a fictional repository replayed as a living aquarium. It takes about three minutes at normal speed.*
 
@@ -49,6 +49,8 @@ Move the pointer over the tank to shift the view.
 The population figures are simulated measurements from one seeded run. They are not benchmarks and say nothing about code quality.
 
 ## Projects: one repository, one fish
+
+![The Projects demo tank: six fictional repositories as fish, seaweed, and a rock. The selected fish, driftwood, has dark gaps among its scales, and its health card reads 6.0 years old, last update 4 days ago, about 3,100 pull requests with 49% of finished ones merged, and scales 46% whole with 24 issues unanswered for over 30 days.](docs/projects.png)
 
 Projects is a second reading of the tank, switched by the `Projects` tab beside the title. It opens on a demo tank of six fictional projects, one for each kind of upkeep, so it needs no network; **Load projects** reads real repositories from GitHub. Each repository becomes one body: a fish while it is maintained, a grey and dull fish once nobody has pushed to it for 90 days, a clump of seaweed once that reaches a year, and a rock once it is archived. Every body carries its repository's name.
 
@@ -391,7 +393,7 @@ An import reads a **window** — 30, 90, or 365 days before the moment you press
 
 Without a token, an import may spend 40 of the 60 requests GitHub allows each hour. A fine-grained read-only token raises the limit to 5,000 an hour and raises the import budget to 200; it is kept in that tab's memory only, never written to storage or a URL, and sent only to `api.github.com`. A token pasted into a page is visible to any script running in that page.
 
-The dataset a replay uses can be downloaded with **Save dataset** and reopened with **Open dataset**, without network access. The file carries a format id and version, so a foreign or older file is rejected with a readable message and the loaded dataset is kept. A saved dataset is the reproducible unit: same file, same seed, same state at the same tick.
+The dataset a replay uses can be downloaded with **Save dataset** and reopened with **Open dataset**, without network access. The file carries a format id and version, so a foreign or older file is rejected with a readable message and the loaded dataset is kept. A saved dataset is the reproducible unit: same file, same seed, same state at the same tick. **Save picture**, in the corner of the tank, downloads what the tank shows at that moment as a PNG, for a README or slides; it works in both modes.
 
 ### Hosted demo
 
