@@ -19,8 +19,8 @@ The timelapse is the built-in synthetic demo with seed 1: 68 fictional repositor
 | Replay | Repository activity | In the aquarium |
 | --- | --- | --- |
 | Days 0–9 | Two commits a day spread over all four branches, most of them on `main` | Each commit drops food in its own branch's colour. The tank grows from 64 to about 100, and `main` grows most |
-| Days 9–16 | CI fails on `main`, `feature/coral-cache`, and `fix/pump-timeout`, and work on them stops. Only `experiment/glow` keeps getting commits | The three failing lineages pay an energy penalty and get no food, so they shrink (`main` from about 33 to 14). The experiment's lineage holds steady at about 20. The tank falls to about 42 |
-| Days 16–30 | Each workflow passes again. The two finished branches merge into `main` and go quiet, while `main` and the experiment carry on | Each merge releases food for `main`, which recovers to about 34, level with the experiment. The two merged branches stay small. The tank ends near 80 |
+| Days 9–16 | CI fails on `main`, `feature/coral-cache`, and `fix/pump-timeout`, and work on them stops. Only `experiment/glow` keeps getting commits | The three failing lineages pay an energy penalty, their water turns murky so they cannot see food far away, and they get no new food, so they shrink (`main` from about 29 to 8). The experiment's lineage holds steady at about 24. The tank falls to about 46 |
+| Days 16–30 | Each workflow passes again. The two finished branches merge into `main` and go quiet, while `main` and the experiment carry on | Each merge releases food for `main`, which recovers to about 24 by the last event and keeps growing. The experiment, never murky, pulls ahead to about 42. The two merged branches stay small. The tank ends near 80 |
 
 How to read the tank:
 
@@ -131,7 +131,7 @@ These mappings are designed simulation rules, not measurements of software quali
 | Deduplicated commit | Add a bounded amount of food for its branch's lineage | Commit volume is not a quality or productivity score |
 | Pull request opened | Display an interaction between relevant lineages | Opening a PR is not a merge or biological reproduction |
 | Confirmed PR merge | Add a bounded food pulse for the base branch's lineage, and a visual connection | A Git merge does not require simulated crossbreeding |
-| Supported CI failure or timeout | Increase a bounded energy cost for its branch's lineage only | Failure does not establish poor overall code quality |
+| Supported CI failure or timeout | Increase a bounded energy cost for its branch's lineage only, and cloud its water: none of its fish sees food further than 90 units away until the cost has gone again | Failure does not establish poor overall code quality |
 | Subsequent CI success in the same workflow and branch group | Clear that group's failure contribution and allow gradual recovery | Success in one group does not clear failures in another |
 | No new Git records | Continue the configured baseline resource supply, shared by every lineage | Baseline food is a simulation rule, not fabricated Git activity |
 | Commit or merge on a branch whose lineage has fewer than four organisms | Bring the lineage back up to four founders (R-BRANCH-FOUND) | Organisms dying never deletes a branch; founders have random genes and no parents |
@@ -174,6 +174,16 @@ Energy change = food gained
 Reproduction will require two mature organisms from the same lineage with sufficient energy and expired cooldowns. Offspring will inherit recombined traits and may receive small mutations. Parental energy payments and population limits will prevent unrestricted growth.
 
 Natural selection will emerge through differential survival and reproduction under resource constraints. The engine will not assign every organism a universal fitness score or guarantee that a particular trait always wins.
+
+**What the repository selects for (issue #10).** At first every repository bred the same fish: fast, sharp-sighted, efficient, and long-lived, whatever its history. Two rules now make a branch's history show in its genes, and the **Inherited traits** table beside the lineages shows each lineage's means as they drift. Measured over 30 seeds and 3,700 ticks, with two lineages fed the same commits; each figure is the first lineage's mean trait minus the second's, on a 0–1 scale, ± the standard error:
+
+| Contrast | Eyes (`perceptionRange`) | Lifespan | Why |
+| --- | --- | --- | --- |
+| CI failing throughout on one lineage, never on the other | **−0.068 ± 0.023** (before the murk rule: +0.028 ± 0.019) | +0.006 ± 0.033 | Murky water hides food beyond 90 units, so keen eyes cost energy and find nothing more |
+| A commit every 30 ticks on one lineage, every 240 on the other | −0.035 ± 0.021 | **−0.125 ± 0.027** | Already in the engine: plenty of food lets short-lived fish breed fast enough |
+| The same commits, steady on one lineage, in bursts of twelve on the other | −0.008 ± 0.019 | −0.009 ± 0.028 | No difference. Dropping a commit's food as one clump, to make bursts favour speed, was tried and changed nothing, so it was left out |
+
+Stronger murk separated the eyes more (−0.137 at 70 units) but left the demo's `main` too weak to recover after six days of failing CI, so 90 is a compromise. Speed, metabolism, and body length showed no reliable difference in any contrast.
 
 ## Proposed architecture
 
@@ -328,6 +338,7 @@ Measured on 2026-11-15 on one machine: Apple M5, 24 GB, Node.js 22.21.1, and Chr
 | Offline demo | The demo makes no request to another site. Asking the Ecologist tries the local endpoint and falls back when it is absent |
 | Import, inspect, explain, reset | Pass on a live import of this repository: 26 commits, 4 pull requests, 4 merges, 0 CI runs, with every evidence link pointing to github.com |
 | Per-branch mapping on live data | Pass on a live import of `vitejs/vite`: 8 lineages, 11 workflow runs on their branches, and at most 2 lineages under a CI penalty at once while the others were unaffected |
+| Same state in Node.js and Chrome | Pass: seed 42 and the demo give state hash `845769a0` after 3,000 ticks in Node.js 22 (a unit test) and in Chrome 157. The engine uses no trigonometry, only arithmetic and square roots, which the language standard makes exact everywhere |
 | Phone width (430 px) | Pass: single column with no horizontal scrolling |
 | A browser without WebGL | Pass in Chrome with WebGL disabled: a message replaces the tank, and the measurements, chart, event log, lineage filter, pause, and Ecologist all work |
 | 15-minute stability run and repeated resets | Pass: 72,000 ticks at 4x in 15 minutes at a steady 60 frames per second, memory between 35 and 57 MB with no growth, no errors, and 20 resets that each returned the same tick-0 state hash |
@@ -336,10 +347,9 @@ Measured on 2026-11-15 on one machine: Apple M5, 24 GB, Node.js 22.21.1, and Chr
 
 Not validated:
 
-- **Across engines.** Node.js 22 and Chrome 157 give different state hashes from tick 0, because `Math.cos` differs in the last bit for one starting direction. Replays are reproducible within one engine, which is the scope stated under [Reproducibility](#reproducibility).
 - **The real model.** No API key was used. See [AI Ecologist](#ai-ecologist).
 - **Frame rate with 200 organisms.** Only the simulation tick time was measured at that size.
-- **Busy repositories replay a short window.** A live import of `vitejs/vite` held only two commits, because its 100 most recent workflow runs span so little time. The import says so under Data boundaries; a longer history needs more than one page per source (issue #8). With so little history, the differences between its lineages are still mostly chance.
+- **Busy repositories can outrun the request budget.** A 90-day import of `vitejs/vite` without a token read 1,501 events before its 40 requests ran out, and said so under Data boundaries. A token raises the budget to 200.
 
 ### Three-minute demonstration
 
