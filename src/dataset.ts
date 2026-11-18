@@ -184,11 +184,12 @@ export function loadDataset(text: string): Dataset {
 const DAY = 86_400_000
 export const DEFAULT_DAYS = 90
 export const DEFAULT_BUDGET = 40
-const MAX_PAGES = 20 // a window can ask for a lot of pages; the budget is the real limit
+export const TOKEN_BUDGET = 200 // a token gives 5,000 an hour; one import may use a fraction
 
 export interface ImportOptions {
   days?: number // window ending at import time
   budget?: number // requests this import may spend
+  token?: string // read-only token, kept in memory; raises the ceiling and the default budget
 }
 
 export interface ImportResult {
@@ -206,7 +207,8 @@ export async function importRepo(input: string, options: ImportOptions = {}): Pr
   const repo = input.trim().match(/^(?:https?:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1]
   if (!repo) throw new Error('Enter a public repository as owner/repo or a github.com URL.')
   const days = options.days ?? DEFAULT_DAYS
-  const budget = options.budget ?? DEFAULT_BUDGET
+  const token = options.token?.trim() ?? ''
+  const budget = options.budget ?? (token ? TOKEN_BUDGET : DEFAULT_BUDGET)
   const start = Date.now() - days * DAY
   let used = 0
   let limit: number | null = null
@@ -216,14 +218,21 @@ export async function importRepo(input: string, options: ImportOptions = {}): Pr
     if (used >= budget) return null
     used++
     const res = await fetch(`https://api.github.com/repos/${repo}${path}`, {
-      headers: { Accept: 'application/vnd.github+json' },
+      headers: {
+        Accept: 'application/vnd.github+json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     })
     const left = Number(res.headers.get('x-ratelimit-remaining'))
     if (Number.isFinite(left)) limit = left
     if (res.status === 404) throw new Error('Repository not found, or it is private.')
     if (res.status === 403 || res.status === 429) {
-      throw new Error(`GitHub rate limit reached (${limit ?? '?'} requests left this hour). Try again later.`)
+      throw new Error(
+        `GitHub rate limit reached (${limit ?? '?'} requests left this hour). ` +
+        (token ? 'The token may be expired or may not be allowed to read this repository.' : 'Add a token for 5,000 requests an hour.'),
+      )
     }
+    if (res.status === 401) throw new Error('GitHub rejected the token. Check that it is current and read-only.')
     if (!res.ok) throw new Error(`GitHub returned ${res.status}.`)
     return res.json()
   }
@@ -238,7 +247,7 @@ export async function importRepo(input: string, options: ImportOptions = {}): Pr
   const pages = async (path: string, read: (body: unknown) => unknown[], at: (item: any) => number) => {
     const items: unknown[] = []
     let cut = false
-    for (let page = 1; page <= MAX_PAGES; page++) {
+    for (let page = 1; ; page++) {
       const body = await get(`${path}${path.includes('?') ? '&' : '?'}per_page=${PAGE}&page=${page}`)
       if (body === null) { cut = true; break }
       const records = read(body)
@@ -250,10 +259,14 @@ export async function importRepo(input: string, options: ImportOptions = {}): Pr
 
   const meta = await must('')
   const branches = await must(`/branches?per_page=${PAGE}`)
-  const pulls = await pages('/pulls?state=all&sort=created&direction=desc', (b) => list(b), (p) => Date.parse(text(p?.created_at)))
+  // Updated order keeps recently merged older PRs in the window; fromGitHub filters open/merge events by their own dates.
+  const pulls = await pages('/pulls?state=all&sort=updated&direction=desc', (b) => list(b), (p) => Date.parse(text(p?.updated_at)))
   let runs: unknown = null
+  let runsCut = false
   try {
-    runs = (await pages('/actions/runs?status=completed', (b) => list((b as any)?.workflow_runs), (r) => Date.parse(text(r?.updated_at)))).items
+    const result = await pages('/actions/runs?status=completed', (b) => list((b as any)?.workflow_runs), (r) => Date.parse(text(r?.updated_at)))
+    runs = result.items
+    runsCut = result.cut
   } catch {
     runs = null // missing CI is reported as missing, not as passing
   }
@@ -269,7 +282,7 @@ export async function importRepo(input: string, options: ImportOptions = {}): Pr
   const notices = [
     `The window is the ${days} days before import time; records older than ${new Date(start).toISOString().slice(0, 10)} are missing.`,
   ]
-  if (pulls.cut || commitCut) {
+  if (pulls.cut || runsCut || commitCut) {
     notices.push(`The request budget of ${budget} ran out before the window was fully covered; the oldest records are missing.`)
   }
   if (limit !== null) notices.push(`GitHub reported ${limit} requests left in its hourly limit when the last request finished.`)
