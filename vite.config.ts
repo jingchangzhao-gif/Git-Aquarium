@@ -82,10 +82,12 @@ async function explain(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // GitHub Pages serves the app under /Git-Aquarium/; dev and preview keep the root path.
+  base: command === 'build' ? '/Git-Aquarium/' : '/',
   plugins: [{
     name: 'ecologist',
     configureServer: (server) => void server.middlewares.use('/api/explain', explain),
     configurePreviewServer: (server) => void server.middlewares.use('/api/explain', explain),
   }],
-})
+}))
