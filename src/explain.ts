@@ -231,7 +231,7 @@ export function repoAnswer(kind: RepoQuestion, c: Context): Answer {
     // GitHub run titles already name the workflow; some titles also carry the branch.
     const where = (g: { name: string; branch: string }) => (g.name.includes(g.branch) ? g.name : `${g.name} on ${g.branch}`)
     const facts: Claim[] = groups.slice(0, 5).map((g) => ({
-      text: `${where(g)}: ${plural(g.failed, 'failure')}, ${plural(g.passed, 'pass')} (${Math.round(g.rate * 100)}% of runs failed).`,
+      text: `${where(g)}: ${plural(g.failed, 'failure')}, ${plural(g.passed, 'pass', 'passes')} (${Math.round(g.rate * 100)}% of runs failed).`,
       evidence: refs(window.filter((e) => ci(e) && e.group === g.group)),
     }))
     if (flaky.length) {

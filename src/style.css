@@ -362,6 +362,7 @@ body[data-view='repos'] #pull-panel { display: none !important; }
 #plegend { display: grid; gap: 2px; margin: 0 -8px; }
 #plegend li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; align-items: center; padding: 4px 8px; font: 400 11.5px var(--mono); }
 #plegend .swatch { display: block; width: 10px; height: 10px; border-radius: 50%; }
+#plegend li:has(> button) { display: block; } /* the swatch grid is for the colour key only */
 #plegend button {
   all: unset;
   box-sizing: border-box;

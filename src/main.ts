@@ -564,6 +564,7 @@ function readout() {
 
 function projectLegend() {
   if (!projects) return
+  $('#plegend-hint').textContent = 'one repository per body · click to inspect' // the pull request view replaces it
   $('#plegend').replaceChildren(...projects.projects.map((p) => {
     const li = el('li')
     const button = el('button')
@@ -685,7 +686,7 @@ function selectPull(p: PullSummary | null) {
   if (title instanceof HTMLAnchorElement) Object.assign(title, { href: p.url, target: '_blank', rel: 'noopener' })
   title.textContent = p.title
   row('Title', title)
-  row('Age', `open since ${p.created.slice(0, 10)} · updated ${p.updated.slice(0, 10)} · ${p.staleDays} days since the last update`)
+  row('Age', `open since ${p.created.slice(0, 10)} · updated ${p.updated.slice(0, 10)} · ${p.staleDays} ${p.staleDays === 1 ? 'day' : 'days'} since the last update`)
   row('Size', `${p.lines.toLocaleString('en-US')} lines changed`)
   row('Checks', p.checks)
   row('Review', p.review === 'none' ? 'no review requested or recorded' : p.review)
