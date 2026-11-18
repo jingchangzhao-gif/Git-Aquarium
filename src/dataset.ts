@@ -150,6 +150,57 @@ export function fromGitHub(repo: string, api: GitHubData): Dataset {
   return freeze('recorded', repo, lineages, kept, notices)
 }
 
+// ---- Frozen datasets ----------------------------------------------------------------------------
+// A dataset can be saved as one JSON file and reopened without network access, so a replay is
+// reproducible by someone else: same file, same seed, same state at the same tick.
+
+export const DATASET_FORMAT = 'git-aquarium-dataset'
+export const DATASET_VERSION = 1
+
+const EVENT_KINDS = ['COMMIT_OBSERVED', 'PR_OPENED', 'PR_MERGED', 'CI_FAILED', 'CI_PASSED']
+
+export function saveDataset(d: Dataset): string {
+  return JSON.stringify({ format: DATASET_FORMAT, version: DATASET_VERSION, saved: new Date().toISOString(), dataset: d })
+}
+
+// A file from anywhere is untrusted: reject anything that is not exactly one frozen dataset.
+export function loadDataset(text: string): Dataset {
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    throw new Error('That file is not JSON.')
+  }
+  const v = value as { format?: unknown; version?: unknown; dataset?: unknown }
+  if (!v || v.format !== DATASET_FORMAT) throw new Error('That file is not a Git Aquarium dataset.')
+  if (v.version !== DATASET_VERSION) {
+    throw new Error(`That dataset was saved by a different version (${String(v.version)}); this build reads version ${DATASET_VERSION}.`)
+  }
+  const d = v.dataset as Dataset
+  if (!d || typeof d !== 'object') throw new Error('The dataset is missing.')
+  if (d.source !== 'synthetic' && d.source !== 'recorded') throw new Error('The dataset has an unknown source.')
+  if (typeof d.repo !== 'string' || !d.repo) throw new Error('The dataset has no repository name.')
+  const strings = (v: unknown) => Array.isArray(v) && v.every((s) => typeof s === 'string')
+  if (!strings(d.branches)) throw new Error('The dataset has no branch list.')
+  if (!strings(d.notices)) throw new Error('The dataset has no notice list.')
+  if (!Array.isArray(d.events) || !d.events.length) throw new Error('The dataset has no events.')
+  for (const e of d.events) {
+    if (!e || typeof e !== 'object') throw new Error('The dataset has a malformed event.')
+    if (!EVENT_KINDS.includes(e.kind)) throw new Error(`The dataset has an unknown event kind: ${String(e.kind)}.`)
+    if (typeof e.id !== 'string' || !e.id) throw new Error('The dataset has an event without an id.')
+    if (typeof e.at !== 'string' || Number.isNaN(Date.parse(e.at))) throw new Error('The dataset has an event without a usable date.')
+    if (!Number.isFinite(e.tick) || !Number.isInteger(e.tick)) throw new Error('The dataset has an event without a tick.')
+    if (!Number.isInteger(e.lineage) || e.lineage < 0) throw new Error('The dataset has an event without a lineage.')
+    if (!strings(e.branches)) throw new Error('The dataset has an event without branches.')
+    if (e.lineage >= d.branches.length) throw new Error('The dataset has an event on a lineage that does not exist.')
+    if (typeof e.title !== 'string') throw new Error('The dataset has an event without a title.')
+    if (e.url !== null && (typeof e.url !== 'string' || link(e.url) !== e.url)) {
+      throw new Error('The dataset has an event with a malformed url.')
+    }
+  }
+  return d
+}
+
 // Reads one public repository straight from the browser: GitHub's REST API allows it, so no server or token is needed.
 // ponytail: unauthenticated = 60 requests/hour per IP, and an import costs 4 plus one per lineage (at most 12);
 // add a token (issue #8) if that is too few.

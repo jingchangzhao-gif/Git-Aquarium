@@ -2,7 +2,7 @@ import '@fontsource-variable/fraunces'
 import '@fontsource-variable/fraunces/wght-italic.css'
 import '@fontsource-variable/martian-mono'
 import './style.css'
-import { importRepo, type Dataset } from './dataset'
+import { importRepo, loadDataset, saveDataset, type Dataset } from './dataset'
 import { demo } from './demo'
 import { explain, key, parseAnswer, repoAnswer, repoQuestion, summarize, unknownEvidence, type Answer, type Claim, type Context, type Sample } from './explain'
 import { P, RULES, TRAITS, hashState, lifespanTicks, maxEnergy, type EventKind, type Organism, type State } from './sim'
@@ -185,6 +185,29 @@ $('#source').addEventListener('submit', async (e) => {
   }
 })
 $('#demo').addEventListener('click', () => use(demo))
+
+// A saved dataset replays without network access and without depending on what the repository does next.
+$('#save').addEventListener('click', () => {
+  const blob = new Blob([saveDataset(data)], { type: 'application/json' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `${data.repo.replace(/[^\w.-]+/g, '_')}-seed-${$<HTMLInputElement>('#seed').value}.json`
+  a.click()
+  URL.revokeObjectURL(a.href)
+})
+$('#open').addEventListener('click', () => $<HTMLInputElement>('#file').click())
+$('#file').addEventListener('change', async () => {
+  const file = $<HTMLInputElement>('#file').files?.[0]
+  if (!file) return
+  try {
+    use(loadDataset(await file.text()))
+    $('#error').textContent = ''
+  } catch (err) {
+    $('#error').textContent = `Could not open that dataset: ${(err as Error).message} The previous dataset is still loaded.`
+  } finally {
+    $<HTMLInputElement>('#file').value = '' // so reopening the same file fires change again
+  }
+})
 $('#controls').addEventListener('submit', (e) => {
   e.preventDefault()
   load()
