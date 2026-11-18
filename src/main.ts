@@ -6,7 +6,7 @@ import { importRepo, loadDataset, saveDataset, type Dataset } from './dataset'
 import { linkFor, readLink } from './link'
 import { demo } from './demo'
 import { explain, key, parseAnswer, repoAnswer, repoQuestion, summarize, unknownEvidence, type Answer, type Claim, type Context, type Sample } from './explain'
-import { P, RULES, TRAITS, hashState, lifespanTicks, maxEnergy, type EventKind, type Organism, type State } from './sim'
+import { P, RULES, TRAITS, hashState, lifespanTicks, maxEnergy, type EventKind, type Organism, type State, type Trait } from './sim'
 import { COLORS, createTank, silhouette, type ProjectDraw, type Swimmer } from './tank'
 import { DEFAULT_REPOS, countIssues, countPulls, fetchProjects, type Project, type ProjectSet } from './projects'
 import { readPulls, STALE_DAYS, type Check, type PullSet, type PullSummary } from './pulls'
@@ -238,6 +238,23 @@ $('#speed').addEventListener('change', (e) => send({ speed: Number((e.target as 
 
 // ---- Readouts (once per snapshot) ---------------------------------------------------------------
 
+// What each lineage has evolved: the fingerprint a repository leaves on its fish (issue #10).
+// ponytail: current means only; a chart over time if the drift itself needs reading
+const SHOWN: [Trait, string][] = [['perceptionRange', 'Eyes'], ['speed', 'Speed'], ['metabolism', 'Metab.'], ['lifespan', 'Life']]
+function traits(s: State) {
+  const head = el('tr')
+  head.append(el('th', 'Lineage'), ...SHOWN.map(([, label]) => el('th', label)))
+  $('#traits').replaceChildren(head, ...data.branches.map((name, i) => {
+    const fish = s.organisms.filter((o) => o.lineage === i)
+    const row = el('tr')
+    const who = el('th', name)
+    who.style.color = COLORS[i % COLORS.length]
+    row.append(who, ...SHOWN.map(([t]) =>
+      el('td', fish.length ? String(Math.round((100 * fish.reduce((sum, o) => sum + o.genome[t], 0)) / fish.length)) : '–')))
+    return row
+  }))
+}
+
 function report(s: State) {
   const n = s.organisms.length
   const counts = data.branches.map(() => 0)
@@ -253,6 +270,7 @@ function report(s: State) {
     samples.push({ tick: s.tick, pop: counts, energy: n ? energy / n : 0, stress: levels, tally: s.tally })
     if (samples.length > 900) samples.shift() // ponytail: the chart and explanations keep the last 15 simulated minutes; thin old readings instead if longer runs matter
     chart()
+    traits(s)
   }
   vitals()
   $('#s-pop').textContent = String(n)

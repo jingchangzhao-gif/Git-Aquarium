@@ -238,7 +238,12 @@ dt { color: var(--dim); }
 #legend button:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
 #legend button[aria-pressed='true'] { background: rgba(169, 214, 208, 0.12); }
 #legend.filtered button[aria-pressed='false'] { opacity: 0.45; }
-#legend .stressed span::after { content: ' · CI penalty'; color: var(--tide); } /* this branch's CI is failing or still recovering */
+#legend .stressed span::after { content: ' · CI penalty, murky'; color: var(--tide); }
+#traits { width: 100%; table-layout: fixed; border-collapse: collapse; font: 400 11.5px var(--mono); font-variant-numeric: tabular-nums; }
+#traits th, #traits td { padding: 3px 0 3px 6px; text-align: right; font-weight: 400; }
+#traits th:first-child { width: 36%; padding-left: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#traits tr:first-child th { color: var(--dim); }
+#traits + .hint { margin-top: 8px; color: var(--dim); font-style: italic; font-size: 13px; } /* this branch's CI is failing or still recovering */
 #legend svg { width: 24px; height: 16px; fill: var(--c); } /* the lineage's species, in its colour */
 #legend span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #legend b { font: 400 18px/1 var(--serif); font-variant-numeric: tabular-nums; }
