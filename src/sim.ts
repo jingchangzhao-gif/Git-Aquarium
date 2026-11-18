@@ -59,7 +59,7 @@ export const RULES: Record<EventKind, { id: string; effect: string }> = {
   COMMIT_OBSERVED: { id: 'R-COMMIT-FOOD', effect: "adds a bounded amount of food for its branch's lineage" },
   PR_OPENED: { id: 'R-PR-OPEN', effect: 'shows an interaction between lineages; no ecological effect' },
   PR_MERGED: { id: 'R-PR-MERGE', effect: "adds a bounded food pulse for the base branch's lineage and a visual connection" },
-  CI_FAILED: { id: 'R-CI-FAIL', effect: "raises the bounded energy cost of its branch's lineage for this workflow" },
+  CI_FAILED: { id: 'R-CI-FAIL', effect: "raises the bounded energy cost of its branch's lineage for this workflow, and clouds its water so no fish of it sees far; keen eyes stop paying for themselves" },
   CI_PASSED: { id: 'R-CI-PASS', effect: "clears this workflow's cost on its branch's lineage; recovery is gradual" },
 }
 
@@ -84,6 +84,8 @@ export const P = {
   baseCost: 0.03,
   moveCost: 0.008,
   senseCost: 0.0001,
+  // Selection by the repository (issue #10): the environment, not only the supply, decides which genes pay.
+  murkSight: 90, // while a lineage's CI fails, none of its fish sees further than this, however good its eyes
   // Swimming: fish turn gradually, cruise level, and school with their own lineage.
   turnRate: 0.08, // max change of direction per tick (radians) while cruising
   chaseTurnRate: 0.18, // ...and while heading for food
@@ -121,10 +123,26 @@ function rand(s: State): number {
 }
 
 const spot = (s: State) => ({ x: rand(s) * P.width, y: rand(s) * P.height, z: rand(s) * P.depth })
+// No trigonometry in the engine: Math.cos and Math.sin may differ in the last bit between JavaScript engines,
+// while + - * / and Math.sqrt are exact by the standard. So the same replay gives the same hash in every browser.
+// The turn rates as fixed constants: cos and sin of P.turnRate and P.chaseTurnRate (a test checks they match).
+export const TURN = {
+  cruise: { cos: 0.9968017063026194, sin: 0.0799146939691727 },
+  chase: { cos: 0.9838436927881214, sin: 0.17902957342582418 },
+}
+
 // A random level direction: fish start out, and are born, swimming horizontally.
+// A point picked evenly inside the unit circle, scaled out to its edge, gives every heading the same chance.
 function level(s: State) {
-  const yaw = rand(s) * 2 * Math.PI
-  return { ux: Math.cos(yaw), uy: 0, uz: Math.sin(yaw) }
+  for (;;) {
+    const x = rand(s) * 2 - 1
+    const z = rand(s) * 2 - 1
+    const r = x * x + z * z
+    if (r > 1e-6 && r <= 1) {
+      const n = Math.sqrt(r)
+      return { ux: x / n, uy: 0, uz: z / n }
+    }
+  }
 }
 
 // One lineage per observed branch (R-BRANCH-LINEAGE); the starting population is shared between them.
@@ -195,7 +213,8 @@ export function step(s: State, events: readonly GitEvent[] = []): void {
   for (let k = 0; k < s.organisms.length; k++) {
     const o = s.organisms[k]
     const g = o.genome
-    const sight = sightRange(g)
+    const eyes = sightRange(g) // what it pays for
+    const sight = s.penalty[o.lineage] > 0 ? Math.min(eyes, P.murkSight) : eyes // what it can use (R-CI-FAIL murk)
     const speed = swimSpeed(g)
     // ponytail: O(organisms x food) scan, ~100k checks at the caps; spatial grid if the caps grow
     let target = -1
@@ -272,12 +291,15 @@ export function step(s: State, events: readonly GitEvent[] = []): void {
       if (side < 1e-9) { wx = 1; side = 1 }
     }
     if (side >= 1e-9) {
-      const turn = Math.min(chasing ? P.chaseTurnRate : P.turnRate, Math.atan2(side, along))
-      const c = Math.cos(turn)
-      const t = Math.sin(turn) / side
-      o.ux = o.ux * c + wx * t
-      o.uy = o.uy * c + wy * t
-      o.uz = o.uz * c + wz * t
+      const rate = chasing ? TURN.chase : TURN.cruise
+      if (along >= rate.cos) { // less than one turn step away: face it
+        o.ux = dx; o.uy = dy; o.uz = dz
+      } else { // rotate one turn step toward it, in the plane of the two directions
+        const t = rate.sin / side
+        o.ux = o.ux * rate.cos + wx * t
+        o.uy = o.uy * rate.cos + wy * t
+        o.uz = o.uz * rate.cos + wz * t
+      }
       const len = Math.sqrt(o.ux * o.ux + o.uy * o.uy + o.uz * o.uz) // stop rounding error building up
       o.ux /= len; o.uy /= len; o.uz /= len
     }
@@ -312,7 +334,7 @@ export function step(s: State, events: readonly GitEvent[] = []): void {
     o.energy -=
       P.baseCost * (0.5 + g.metabolism) * (0.5 + g.bodyLength) +
       P.moveCost * speed * speed +
-      P.senseCost * sight +
+      P.senseCost * eyes +
       s.penalty[o.lineage]
     o.age++
     if (o.cooldown > 0) o.cooldown--

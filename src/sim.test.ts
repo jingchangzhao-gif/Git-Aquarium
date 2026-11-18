@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest'
 import { fromGitHub } from './dataset'
 import { demo } from './demo'
-import { P, TRAITS, createState, hashState, lifespanTicks, maxEnergy, step, type GitEvent, type State } from './sim'
+import { P, TRAITS, TURN, createState, hashState, lifespanTicks, maxEnergy, step, type GitEvent, type State } from './sim'
+
+const GOLDEN = '845769a0'
 
 function run(seed: number, ticks: number, events: GitEvent[] = [], check?: (s: State) => void): State {
   const s = createState(seed)
@@ -17,6 +19,29 @@ test('same seed and frozen dataset give the same state hash after 10,000 ticks',
   expect(a.cursor).toBe(demo.events.length)
   expect(hashState(a)).toBe(hashState(run(42, 10_000, demo.events)))
   expect(hashState(run(43, 100))).not.toBe(hashState(run(42, 100)))
+})
+
+test('the engine has no trigonometry, so a replay is the same in every JavaScript engine', () => {
+  expect(TURN.cruise.cos).toBeCloseTo(Math.cos(P.turnRate), 15)
+  expect(TURN.cruise.sin).toBeCloseTo(Math.sin(P.turnRate), 15)
+  expect(TURN.chase.cos).toBeCloseTo(Math.cos(P.chaseTurnRate), 15)
+  expect(TURN.chase.sin).toBeCloseTo(Math.sin(P.chaseTurnRate), 15)
+  // A fixed hash: the browser check in the README reproduces it in Chrome. It changes only when the engine does.
+  expect(hashState(run(42, 3000, demo.events))).toBe(GOLDEN)
+})
+
+test('murky water: a lineage with failing CI cannot see far, however good its eyes', () => {
+  const heading = (failing: boolean) => {
+    const s = createState(3, 1)
+    const o = s.organisms[0]
+    s.organisms = [Object.assign(o, { x: 400, y: 250, z: 60, ux: 1, uy: 0, uz: 0, genome: { ...o.genome, perceptionRange: 1 } })]
+    s.food = [{ x: 400, y: 250, z: 60 + 120, lineage: -1 }] // in sight in clear water (195), beyond the murk (P.murkSight)
+    if (failing) s.failing = [{ group: 'ci@main', lineage: 0 }]
+    step(s)
+    return o.uz
+  }
+  expect(heading(false)).toBeCloseTo(TURN.chase.sin, 6) // clear water: it turns toward the food at once
+  expect(Math.abs(heading(true))).toBeLessThan(TURN.cruise.sin + 1e-9) // murky: it does not see it and only cruises
 })
 
 test('a serialized snapshot resumes to the same state', () => {
@@ -117,8 +142,9 @@ test('mapping rules: each event acts on the lineage of its own branch', () => {
   expect(s.penalty).toEqual([0, P.penaltyPerGroup, 0, 0])
   for (let i = 0; i < 10; i++) step(s, events)
   expect(s.penalty).toEqual([P.penaltyPerGroup, 2 * P.penaltyPerGroup, P.penaltyPerGroup, P.penaltyPerGroup]) // a failure on an unknown branch costs everyone
-  for (let i = 0; i < 200; i++) step(s, events)
-  expect(s.food.length).toBe(P.maxFood) // a burst of merges cannot exceed the food cap
+  let most = 0 // the merges re-found lineage 2, whose fish may eat, so the count is followed over time
+  for (let i = 0; i < 200; i++) { step(s, events); most = Math.max(most, s.food.length) }
+  expect(most).toBe(P.maxFood) // a burst of merges fills the tank to the food cap and no further
 })
 
 test('an organism eats shared food and its own lineage\'s food, never another lineage\'s', () => {
