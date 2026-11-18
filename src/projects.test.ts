@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  countIssues, countPulls, fetchProjects, lifecycleOf, parseLastPage, parseRepos, readProject, sizeOf,
+  countIssues, countPulls, demoProjects, fetchProjects, healthOf, lifecycleOf, parseLastPage, parseRepos, readProject, sizeOf,
   type Issue, type Pull,
 } from './projects'
 
@@ -35,11 +35,11 @@ describe('parseLastPage', () => {
 
 describe('sizeOf', () => {
   it('grows with size and stops at the cap', () => {
-    expect(sizeOf(0)).toBeCloseTo(0.65)
-    expect(sizeOf(32_767)).toBeCloseTo(1.2)
-    expect(sizeOf(1_000_000)).toBeCloseTo(1.2)
-    expect(sizeOf(10)).toBeGreaterThan(0.65)
-    expect(sizeOf(20_500) - sizeOf(300)).toBeGreaterThan(0.2) // a small and a very large project still look different
+    expect(sizeOf(0)).toBeCloseTo(0.55)
+    expect(sizeOf(32_767)).toBeCloseTo(1.35)
+    expect(sizeOf(1_000_000)).toBeCloseTo(1.35)
+    expect(sizeOf(10)).toBeGreaterThan(0.55)
+    expect(sizeOf(20_500) - sizeOf(300)).toBeGreaterThan(0.3) // a small and a very large project still look different
   })
 })
 
@@ -65,9 +65,9 @@ describe('counts', () => {
 
   it('counts open and question issues', () => {
     const issues: Issue[] = [
-      { number: 1, title: '', open: true, question: true, at: '', url: '' },
-      { number: 2, title: '', open: true, question: false, at: '', url: '' },
-      { number: 3, title: '', open: false, question: false, at: '', url: '' },
+      { number: 1, title: '', open: true, question: true, comments: 0, at: '', url: '' },
+      { number: 2, title: '', open: true, question: false, comments: 0, at: '', url: '' },
+      { number: 3, title: '', open: false, question: false, comments: 0, at: '', url: '' },
     ]
     expect(countIssues(issues)).toEqual({ open: 2, question: 1 })
   })
@@ -100,7 +100,7 @@ describe('readProject', () => {
     const p = readProject('vitejs/vite', { ...meta, description: null }, [], [], NOW)
     expect(p.theme).toBe('vite')
     expect(p.prs).toMatchObject({ total: 0, exact: true })
-    expect(p.size).toBeCloseTo(0.65)
+    expect(p.size).toBeCloseTo(0.55)
   })
 
   it('estimates totals when the lists were cut off, and says they are estimates', () => {
@@ -158,5 +158,54 @@ describe('fetchProjects', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+describe('the health card', () => {
+  const iso = (days: number) => new Date(NOW - days * DAY).toISOString()
+  it('reads age, upkeep, skeleton, and scales from the records', () => {
+    const p = readProject('o/r', { created_at: iso(730), pushed_at: iso(3) }, [
+      { number: 4, state: 'open', created_at: iso(5) },
+      { number: 3, state: 'closed', merged_at: iso(9), created_at: iso(10) },
+      { number: 2, state: 'closed', merged_at: iso(99), created_at: iso(100) },
+      { number: 1, state: 'closed', merged_at: null, created_at: iso(200) },
+    ], [
+      { number: 8, state: 'open', comments: 0, created_at: iso(40) }, // over 30 days, nobody answered
+      { number: 7, state: 'open', comments: 0, created_at: iso(10) }, // too new to count as unanswered
+      { number: 6, state: 'open', comments: 2, created_at: iso(60) },
+      { number: 5, state: 'closed', comments: 1, created_at: iso(70) },
+    ], NOW)
+    const h = healthOf(p, NOW)
+    expect(h.years).toBeCloseTo(2, 1)
+    expect(h.lastUpdate).toBe(3)
+    expect(h.opened).toEqual({ pulls: 2, issues: 4, atLeast: false })
+    expect(h.merged).toBeCloseTo(2 / 3)
+    expect(h.complete).toBe(0.25)
+    expect(h.unanswered).toBe(1)
+  })
+
+  it('says "at least" when the latest 100 do not reach back 90 days, and has no ratio without records', () => {
+    const busy = readProject('o/r', {}, Array.from({ length: 100 }, (_, i) => ({ number: i, state: 'open', created_at: iso(i / 10) })), [], NOW)
+    expect(healthOf(busy, NOW).opened).toEqual({ pulls: 100, issues: 0, atLeast: true })
+    expect(healthOf(busy, NOW).merged).toBeNull()
+    expect(healthOf(busy, NOW).complete).toBeNull()
+  })
+})
+
+describe('the offline demo tank', () => {
+  it('needs no network and shows every kind of upkeep', () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const set = demoProjects(NOW)
+    vi.unstubAllGlobals()
+    expect(fetch).not.toHaveBeenCalled()
+    expect(set.source).toBe('synthetic')
+    expect(set.projects.map((p) => p.lifecycle)).toEqual(['active', 'active', 'active', 'quiet', 'abandoned', 'abandoned'])
+    expect(set.projects[5].archived).toBe(true)
+    const tidy = healthOf(set.projects[1], NOW), piling = healthOf(set.projects[2], NOW)
+    expect(tidy.complete!).toBeGreaterThan(0.85) // the tidy tool's scales are nearly whole...
+    expect(piling.complete!).toBeLessThan(0.6) // ...the popular one's are not,
+    expect(piling.unanswered).toBeGreaterThan(tidy.unanswered) // and its questions wait unanswered
+    expect(demoProjects(NOW)).toEqual(set) // the same every time
   })
 })

@@ -18,6 +18,7 @@ export interface Issue {
   title: string
   open: boolean
   question: boolean
+  comments: number
   at: string
   url: string
 }
@@ -35,12 +36,13 @@ export interface Project {
   prs: { total: number; exact: boolean; recent: Pull[] }
   issues: { total: number; exact: boolean; recent: Issue[] }
   activity: number // 0..1, how much landed in the last 90 days
-  size: number // 0.65..1.2, the fish's length, from the pull request total
+  size: number // 0.55..1.35, the fish's length, from the pull request total
   lifecycle: Lifecycle
   quietDays: number
 }
 
 export interface ProjectSet {
+  source: 'synthetic' | 'recorded'
   projects: Project[]
   notices: string[]
   at: string
@@ -89,7 +91,7 @@ export function parseLastPage(link: string | null): number {
 // Log scale up to 32,767 pull requests, so that 300 and 20,000 are both visible and still look different.
 export function sizeOf(total: number): number {
   const capped = Math.max(0, Math.min(32_767, total))
-  return 0.65 + (0.55 * Math.log2(1 + capped)) / 15
+  return 0.55 + (0.8 * Math.log2(1 + capped)) / 15
 }
 
 export function lifecycleOf(meta: { archived: boolean; pushed_at: string }, now: number): { lifecycle: Lifecycle; quietDays: number } {
@@ -146,6 +148,7 @@ function toIssue(raw: Json): Issue | null {
     title: text(raw.title),
     open: raw.state === 'open',
     question: labels.includes('question'),
+    comments: Math.max(0, Number(raw.comments) || 0),
     at: text(raw.created_at, 32),
     url: link(raw.html_url),
   }
@@ -247,5 +250,77 @@ export async function fetchProjects(input: string, now = Date.now()): Promise<Pr
   }
   notices.push('Bones are pull requests, scales are issues, and a repository is not a living thing: this mapping is a design choice, not a measurement of the code.')
   notices.push('Loading costs three GitHub requests per project, and one search request for its issue count; without a token GitHub allows 60 an hour and ten searches a minute.')
-  return { projects, notices, at: new Date(now).toISOString() }
+  return { source: 'recorded', projects, notices, at: new Date(now).toISOString() }
+}
+
+// The three things the panel answers about a fish: how old and how looked-after it is (age), how much work
+// went through it (skeleton), and how many of its questions were dealt with (scales).
+export interface Health {
+  years: number
+  lastUpdate: number // days since the last push
+  opened: { pulls: number; issues: number; atLeast: boolean } // in the last 90 days; atLeast when the latest 100 did not reach back that far
+  merged: number | null // of the latest pull requests that were finished, the share merged rather than closed unmerged
+  complete: number | null // of the latest issues, the share closed: how whole the scales are
+  unanswered: number // open issues over 30 days old that nobody has commented on, among the latest 100
+}
+
+export function healthOf(p: Project, now: number): Health {
+  const created = Date.parse(p.created)
+  const cutoff = now - 90 * DAY
+  const within = (list: { at: string }[]) => list.filter((x) => Date.parse(x.at) >= cutoff).length
+  const reaches = (list: { at: string }[]) => list.length < PAGE || list.some((x) => Date.parse(x.at) < cutoff)
+  const pulls = countPulls(p.prs.recent)
+  const finished = pulls.merged + pulls.closed
+  const issues = p.issues.recent
+  return {
+    years: Number.isFinite(created) ? Math.max(0, (now - created) / (365.25 * DAY)) : 0,
+    lastUpdate: p.quietDays,
+    opened: { pulls: within(p.prs.recent), issues: within(issues), atLeast: !reaches(p.prs.recent) || !reaches(issues) },
+    merged: finished ? pulls.merged / finished : null,
+    complete: issues.length ? issues.filter((i) => !i.open).length / issues.length : null,
+    unanswered: issues.filter((i) => i.open && i.comments === 0 && Date.parse(i.at) < now - 30 * DAY).length,
+  }
+}
+
+// A tank that opens without the network: fictional repositories, made into records the same way GitHub's would be
+// read, so the demo goes through readProject like real data. Each one shows a different kind of upkeep.
+const DEMO = [
+  { name: 'harbor', theme: 'A busy web framework with a large team', years: 8, quiet: 0, prs: 12_000, perMonth: 300, merge: 0.8, issues: 5200, complete: 0.86, answered: 0.95 },
+  { name: 'lantern', theme: 'A small, tidy command-line tool', years: 3, quiet: 2, prs: 240, perMonth: 8, merge: 0.92, issues: 70, complete: 0.96, answered: 1 },
+  { name: 'driftwood', theme: 'Popular, but its questions pile up', years: 6, quiet: 4, prs: 3100, perMonth: 40, merge: 0.45, issues: 2600, complete: 0.42, answered: 0.35 },
+  { name: 'tidepool', theme: 'Nobody has pushed since the spring', years: 5, quiet: 150, prs: 640, perMonth: 2, merge: 0.75, issues: 300, complete: 0.7, answered: 0.6 },
+  { name: 'kelp', theme: 'Untouched for more than a year', years: 9, quiet: 520, prs: 410, perMonth: 1, merge: 0.7, issues: 220, complete: 0.6, answered: 0.5 },
+  { name: 'anchor', theme: 'Finished and archived by its owners', years: 11, quiet: 900, prs: 1800, perMonth: 1, merge: 0.85, issues: 900, complete: 0.97, answered: 0.9, archived: true },
+]
+
+export function demoProjects(now = Date.now()): ProjectSet {
+  let seed = 7
+  const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646 // a fixed sequence, so the demo is the same every time
+  const iso = (daysAgo: number) => new Date(now - daysAgo * DAY).toISOString()
+  const projects = DEMO.map((d) => {
+    const repo = `demo/${d.name}`
+    const gap = 30 / d.perMonth // days between two pull requests; issues arrive at the same pace
+    const items = (total: number, make: (n: number, daysAgo: number) => Json) =>
+      Array.from({ length: Math.min(PAGE, total) }, (_, i) => make(total - i, d.quiet + i * gap * (0.5 + rand())))
+    const pulls = items(d.prs, (number, daysAgo) => ({
+      number, title: `Change ${number}`, created_at: iso(daysAgo),
+      state: daysAgo - d.quiet < Math.max(3 * gap, 4) && rand() < 0.5 ? 'open' : 'closed', // the newest few are still open
+      merged_at: rand() < d.merge ? iso(daysAgo - 1) : null,
+    }))
+    const issues = items(d.issues, (number, daysAgo) => {
+      const open = rand() > d.complete
+      return { number, title: `Question ${number}`, created_at: iso(daysAgo), state: open ? 'open' : 'closed',
+        comments: open && rand() > d.answered ? 0 : 1 + Math.floor(rand() * 4), labels: rand() < 0.1 ? [{ name: 'question' }] : [] }
+    })
+    const meta = { name: d.name, description: d.theme, created_at: iso(d.years * 365.25), pushed_at: iso(d.quiet), archived: d.archived === true }
+    return readProject(repo, meta, pulls.map((p) => (p.state === 'open' ? { ...p, merged_at: null } : p)), issues, now,
+      d.prs > PAGE ? Math.ceil(d.prs / PAGE) : 0, d.issues)
+  })
+  return {
+    source: 'synthetic', projects, at: new Date(now).toISOString(),
+    notices: [
+      'These six projects are fictional, made up so the tank opens without the network. Load projects to read real ones from GitHub.',
+      'Bones are pull requests, scales are issues, and a repository is not a living thing: this mapping is a design choice, not a measurement of the code.',
+    ],
+  }
 }
