@@ -36,6 +36,29 @@ test('fromGitHub keeps only records inside the chosen window', () => {
   expect(d.events[0].tick).toBe(100) // one event still starts after the warmup
 })
 
+test('a pull request merged inside the window is fetched even when it was opened earlier', async () => {
+  const pull = {
+    number: 42, title: 'Older PR', html_url: 'https://github.com/o/r/pull/42',
+    created_at: '2025-01-01T00:00:00Z', updated_at: '2026-11-17T00:00:00Z', merged_at: '2026-11-17T00:00:00Z',
+    head: { ref: 'feature' }, base: { ref: 'main' },
+  }
+  vi.stubGlobal('fetch', async (input: string | URL | Request) => {
+    const url = String(input)
+    let body: unknown
+    if (url.endsWith('/repos/o/r')) body = { default_branch: 'main' }
+    else if (url.includes('/branches?')) body = [{ name: 'main' }, { name: 'feature' }]
+    else if (url.includes('/pulls?')) {
+      expect(url).toContain('sort=updated')
+      body = [pull]
+    } else if (url.includes('/actions/runs?')) body = { workflow_runs: [] }
+    else if (url.includes('/commits?')) body = []
+    else throw new Error(`Unexpected GitHub URL: ${url}`)
+    return new Response(JSON.stringify(body), { status: 200 })
+  })
+  const result = await importRepo('o/r', { days: 365 })
+  expect(result.dataset.events.filter((event) => event.id === '42').map((event) => event.kind)).toEqual(['PR_MERGED'])
+})
+
 test('a file that is not a dataset is rejected with a readable reason', () => {
   expect(() => loadDataset('not json')).toThrow(/not JSON/)
   expect(() => loadDataset(JSON.stringify({ format: 'other', version: DATASET_VERSION, dataset: demo }))).toThrow(/not a Git Aquarium dataset/)

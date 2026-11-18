@@ -185,7 +185,6 @@ const DAY = 86_400_000
 export const DEFAULT_DAYS = 90
 export const DEFAULT_BUDGET = 40
 export const TOKEN_BUDGET = 200 // a token gives 5,000 an hour; one import may use a fraction
-const MAX_PAGES = 20 // a window can ask for a lot of pages; the budget is the real limit
 
 export interface ImportOptions {
   days?: number // window ending at import time
@@ -248,7 +247,7 @@ export async function importRepo(input: string, options: ImportOptions = {}): Pr
   const pages = async (path: string, read: (body: unknown) => unknown[], at: (item: any) => number) => {
     const items: unknown[] = []
     let cut = false
-    for (let page = 1; page <= MAX_PAGES; page++) {
+    for (let page = 1; ; page++) {
       const body = await get(`${path}${path.includes('?') ? '&' : '?'}per_page=${PAGE}&page=${page}`)
       if (body === null) { cut = true; break }
       const records = read(body)
@@ -260,10 +259,14 @@ export async function importRepo(input: string, options: ImportOptions = {}): Pr
 
   const meta = await must('')
   const branches = await must(`/branches?per_page=${PAGE}`)
-  const pulls = await pages('/pulls?state=all&sort=created&direction=desc', (b) => list(b), (p) => Date.parse(text(p?.created_at)))
+  // Updated order keeps recently merged older PRs in the window; fromGitHub filters open/merge events by their own dates.
+  const pulls = await pages('/pulls?state=all&sort=updated&direction=desc', (b) => list(b), (p) => Date.parse(text(p?.updated_at)))
   let runs: unknown = null
+  let runsCut = false
   try {
-    runs = (await pages('/actions/runs?status=completed', (b) => list((b as any)?.workflow_runs), (r) => Date.parse(text(r?.updated_at)))).items
+    const result = await pages('/actions/runs?status=completed', (b) => list((b as any)?.workflow_runs), (r) => Date.parse(text(r?.updated_at)))
+    runs = result.items
+    runsCut = result.cut
   } catch {
     runs = null // missing CI is reported as missing, not as passing
   }
@@ -279,7 +282,7 @@ export async function importRepo(input: string, options: ImportOptions = {}): Pr
   const notices = [
     `The window is the ${days} days before import time; records older than ${new Date(start).toISOString().slice(0, 10)} are missing.`,
   ]
-  if (pulls.cut || commitCut) {
+  if (pulls.cut || runsCut || commitCut) {
     notices.push(`The request budget of ${budget} ran out before the window was fully covered; the oldest records are missing.`)
   }
   if (limit !== null) notices.push(`GitHub reported ${limit} requests left in its hourly limit when the last request finished.`)
