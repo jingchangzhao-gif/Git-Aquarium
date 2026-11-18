@@ -71,10 +71,11 @@ export function pickLineages(api: Pick<GitHubData, 'repo' | 'branches' | 'pulls'
   return [...(main ? [main] : []), ...names].slice(0, MAX_LINEAGES)
 }
 
-export function fromGitHub(repo: string, api: GitHubData): Dataset {
+export function fromGitHub(repo: string, api: GitHubData, windowStart = -Infinity, extra: string[] = []): Dataset {
   const lineages = pickLineages(api)
   const observed = list(api.branches).length
   const notices = [
+    ...extra,
     'Commits replay at their committer timestamp, a proxy rather than a verified push time.',
     'Branches are a current snapshot. A commit counts for the default branch if it is there, otherwise for the first lineage branch it was found on.',
   ]
@@ -124,30 +125,9 @@ export function fromGitHub(repo: string, api: GitHubData): Dataset {
   if (ignored) notices.push(`${ignored} workflow runs with other conclusions (cancelled, skipped, ...) were ignored.`)
   if (elsewhere) notices.push(`${elsewhere} pull requests and workflow runs were on branches that are not shown as lineages; they were left out.`)
 
-  // A source that filled its page is truncated, so start the window where every source is complete.
-  // Dates come from the raw responses: what was left out above still tells us how far back a page reached.
-  const dates = (records: unknown, field: (r: any) => unknown) =>
-    list(records).map((r) => Date.parse(text(field(r)))).filter(Number.isFinite)
-  let start = -Infinity
-  const full = (name: string, reached: number[], size: number) => { // returns whether this source was cut off
-    if (size < PAGE) return false
-    if (reached.length) start = Math.max(start, Math.min(...reached))
-    if (name) notices.push(`Only the ${PAGE} most recent ${name} were imported; older ones are missing.`)
-    return true
-  }
-  const cut = lineages.filter((b) => full('', dates(api.commits[b], (c) => c?.commit?.committer?.date), list(api.commits[b]).length))
-  if (cut.length) notices.push(`Only the ${PAGE} most recent commits on ${cut.length === 1 ? cut[0] : `each of ${cut.length} branches`} were imported; older ones are missing.`)
-  full('pull requests', dates(api.pulls, (p) => p?.created_at), list(api.pulls).length)
-  full('workflow runs', dates(api.runs, (r) => r?.updated_at), list(api.runs).length)
-  const all = [...commits, ...pulls, ...runs]
-  const kept = all.filter((e) => !(Date.parse(e.at) < start))
-  if (kept.length < all.length) {
-    notices.push(
-      `The replay window starts ${new Date(start).toISOString().slice(0, 10)}; ` +
-      `${all.length - kept.length} older records were left out because another source was truncated.`,
-    )
-  }
-  return freeze('recorded', repo, lineages, kept, notices)
+  // The fetch chooses a window; anything older than it is dropped here so the replay starts at its edge.
+  const all = [...commits, ...pulls, ...runs].filter((e) => Date.parse(e.at) >= windowStart)
+  return freeze('recorded', repo, lineages, all, notices)
 }
 
 // ---- Frozen datasets ----------------------------------------------------------------------------
@@ -201,31 +181,100 @@ export function loadDataset(text: string): Dataset {
   return d
 }
 
-// Reads one public repository straight from the browser: GitHub's REST API allows it, so no server or token is needed.
-// ponytail: unauthenticated = 60 requests/hour per IP, and an import costs 4 plus one per lineage (at most 12);
-// add a token (issue #8) if that is too few.
-export async function importRepo(input: string): Promise<Dataset> {
+const DAY = 86_400_000
+export const DEFAULT_DAYS = 90
+export const DEFAULT_BUDGET = 40
+const MAX_PAGES = 20 // a window can ask for a lot of pages; the budget is the real limit
+
+export interface ImportOptions {
+  days?: number // window ending at import time
+  budget?: number // requests this import may spend
+}
+
+export interface ImportResult {
+  dataset: Dataset
+  requests: number
+  budget: number
+  limit: number | null // requests left in GitHub's hourly limit, when the API said
+}
+
+// Reads one public repository straight from the browser: GitHub's REST API allows it, so no server is needed.
+// The window is a period, not a page: each source is read newest first until it passes the window start or
+// the budget is spent, and the notice says which one stopped it.
+// ponytail: unauthenticated = 60 requests/hour per IP. A token raises this (issue #8 I4).
+export async function importRepo(input: string, options: ImportOptions = {}): Promise<ImportResult> {
   const repo = input.trim().match(/^(?:https?:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/)?.[1]
   if (!repo) throw new Error('Enter a public repository as owner/repo or a github.com URL.')
-  const get = async (path: string) => {
+  const days = options.days ?? DEFAULT_DAYS
+  const budget = options.budget ?? DEFAULT_BUDGET
+  const start = Date.now() - days * DAY
+  let used = 0
+  let limit: number | null = null
+
+  // Returns null once the budget is spent, so paging stops instead of failing the whole import.
+  const get = async (path: string): Promise<unknown | null> => {
+    if (used >= budget) return null
+    used++
     const res = await fetch(`https://api.github.com/repos/${repo}${path}`, {
       headers: { Accept: 'application/vnd.github+json' },
     })
+    const left = Number(res.headers.get('x-ratelimit-remaining'))
+    if (Number.isFinite(left)) limit = left
     if (res.status === 404) throw new Error('Repository not found, or it is private.')
     if (res.status === 403 || res.status === 429) {
-      throw new Error('GitHub rate limit reached (60 unauthenticated requests per hour). Try again later.')
+      throw new Error(`GitHub rate limit reached (${limit ?? '?'} requests left this hour). Try again later.`)
     }
     if (!res.ok) throw new Error(`GitHub returned ${res.status}.`)
     return res.json()
   }
-  const [meta, branches, pulls, runs] = await Promise.all([
-    get(''),
-    get(`/branches?per_page=${PAGE}`),
-    get(`/pulls?state=all&per_page=${PAGE}`),
-    get(`/actions/runs?status=completed&per_page=${PAGE}`).then((r) => r?.workflow_runs ?? [], () => null),
-  ])
-  const api = { repo: meta, branches, pulls, runs }
-  const lists = await Promise.all(pickLineages(api).map(async (branch) =>
-    [branch, await get(`/commits?sha=${encodeURIComponent(branch)}&per_page=${PAGE}`)] as const))
-  return fromGitHub(repo, { ...api, commits: Object.fromEntries(lists) })
+
+  const must = async (path: string) => {
+    const body = await get(path)
+    if (body === null) throw new Error(`The request budget of ${budget} ran out before the repository was read.`)
+    return body
+  }
+
+  // Pages newest first; `at` is the date used to stop once a page reaches before the window.
+  const pages = async (path: string, read: (body: unknown) => unknown[], at: (item: any) => number) => {
+    const items: unknown[] = []
+    let cut = false
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const body = await get(`${path}${path.includes('?') ? '&' : '?'}per_page=${PAGE}&page=${page}`)
+      if (body === null) { cut = true; break }
+      const records = read(body)
+      items.push(...records)
+      if (records.length < PAGE || records.some((r) => at(r) < start)) break
+    }
+    return { items, cut }
+  }
+
+  const meta = await must('')
+  const branches = await must(`/branches?per_page=${PAGE}`)
+  const pulls = await pages('/pulls?state=all&sort=created&direction=desc', (b) => list(b), (p) => Date.parse(text(p?.created_at)))
+  let runs: unknown = null
+  try {
+    runs = (await pages('/actions/runs?status=completed', (b) => list((b as any)?.workflow_runs), (r) => Date.parse(text(r?.updated_at)))).items
+  } catch {
+    runs = null // missing CI is reported as missing, not as passing
+  }
+  const api = { repo: meta, branches, pulls: pulls.items, runs }
+  const commits: Record<string, unknown> = {}
+  let commitCut = false
+  for (const branch of pickLineages(api)) {
+    const result = await pages(`/commits?sha=${encodeURIComponent(branch)}`, (b) => list(b), (c) => Date.parse(text(c?.commit?.committer?.date)))
+    commits[branch] = result.items
+    if (result.cut) commitCut = true
+  }
+
+  const notices = [
+    `The window is the ${days} days before import time; records older than ${new Date(start).toISOString().slice(0, 10)} are missing.`,
+  ]
+  if (pulls.cut || commitCut) {
+    notices.push(`The request budget of ${budget} ran out before the window was fully covered; the oldest records are missing.`)
+  }
+  if (limit !== null) notices.push(`GitHub reported ${limit} requests left in its hourly limit when the last request finished.`)
+  notices.push(`This import used ${used} of ${budget} requests.`)
+
+  const dataset = fromGitHub(repo, { ...api, commits }, start, notices)
+  return { dataset, requests: used, budget, limit }
 }
