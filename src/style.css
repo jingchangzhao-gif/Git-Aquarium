@@ -60,7 +60,7 @@ h1 em {
 }
 .tagline { margin-top: 8px; color: var(--dim); font-style: italic; }
 
-#source { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+#source { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; max-width: 560px; } /* the fine print would otherwise stretch it under the title */
 #source > label { flex-basis: 100%; color: var(--dim); }
 .field {
   display: flex;
