@@ -12,7 +12,7 @@ things that were measured, never for guesses. This note fixes the decisions befo
 | D3 | What is a "question"? | **All issues** as scales; **open issues** as missing scales; the `question` label gets a distinct colour | The label is optional and many repositories never use it; counting it alone would leave most bodies bare |
 | D4 | What counts as "no longer maintained"? | `archived` → a rock; `pushed_at` older than **365 days** → seaweed; older than **90 days** → a quiet fish | It is a product decision shown as fact, so the panel always prints the last push date beside it |
 | D5 | How many per tank? | **8 by default, 12 maximum**, editable | 8 × 3 requests = 24, so two loads fit inside GitHub's unauthenticated 60 an hour. One search request per project (ten a minute) gives the exact issue count |
-| D6 | How big is a body? | `size = 0.65 + 0.55 × log2(1 + prs) / 15`, capped at 32,767 PRs | Keeps a 10,000-PR project from filling the tank. The first cap, 256, made every established project the same size, so the scale now runs to 32,767 |
+| D6 | How big is a body? | `size = 0.55 + 0.8 × log2(1 + prs) / 15`, capped at 32,767 PRs; the rib count also grows with the total, `4 × log2(1 + prs)`, at most 60 | Keeps a 10,000-PR project from filling the tank. The first cap, 256, made every established project the same size, so the scale runs to 32,767; the range was widened from 0.65–1.2 because a 300-PR and a 12,000-PR fish looked alike |
 | D7 | Can a rib be clicked? | **Not in v1.** The panel lists the five most recent PRs instead | Per-rib picking needs per-rib geometry ids; the panel gives the same information for less work |
 
 ## The mapping
@@ -20,12 +20,12 @@ things that were measured, never for guesses. This note fixes the decisions befo
 | Repository record | Body part |
 | --- | --- |
 | Description (or repository name) | Spine, the theme every rib hangs from |
-| One pull request | One rib: bone-coloured when merged, amber when open, slate when closed unmerged |
-| Pull request count | Body length and height |
-| One issue | One scale: pale when closed, a dark gap when open, gold when labelled `question` |
+| Pull request count | Body length and height, and the number of ribs (4 per doubling, at most 60) |
+| One of the latest pull requests | One rib: bone-coloured when merged, amber when open, slate when closed unmerged |
+| Share of the latest issues closed | Share of the 24 scales a side left whole; the rest are dark gaps, gold for closed `question` issues |
 | Pull requests and issues opened in the last 90 days | Swim speed |
 | No push for 90 days | Grey, dull skin |
-| Creation date | Age, shown in the panel only |
+| Creation date, last push, 90-day activity, unanswered issues | The panel's health card only |
 
 ## Data boundaries that must stay visible
 

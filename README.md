@@ -50,16 +50,25 @@ The population figures are simulated measurements from one seeded run. They are 
 
 ## Projects: one repository, one fish
 
-Projects is a second reading of the tank, switched by the `Projects` tab beside the title. Each repository becomes one body: a fish while it is maintained, a grey and dull fish once nobody has pushed to it for 90 days, a clump of seaweed once that reaches a year, and a rock once it is archived. Every body carries its repository's name.
+Projects is a second reading of the tank, switched by the `Projects` tab beside the title. It opens on a demo tank of six fictional projects, one for each kind of upkeep, so it needs no network; **Load projects** reads real repositories from GitHub. Each repository becomes one body: a fish while it is maintained, a grey and dull fish once nobody has pushed to it for 90 days, a clump of seaweed once that reaches a year, and a rock once it is archived. Every body carries its repository's name.
 
 - **The spine is the project's theme**: the repository description, or its name when it has none.
-- **Each rib is a pull request.** Merged ribs are pale bone, open ribs amber, and closed-without-merge ribs slate. Up to sixty ribs are drawn so a large project does not turn into a white blur; the panel reports the full count.
-- **Each scale is an issue.** Closed issues are pale scales, open issues dark gaps in the coat, and issues labelled `question` are gold.
-- **Length and height follow the number of pull requests** on a log scale, so a project with 300 pull requests stays visible beside one with 20,500 and the two still look different.
+- **The skeleton is the pull requests.** The rib count grows with the total, four ribs for every doubling, up to sixty so a large project does not turn into a white blur. Each rib is coloured by one of the latest pull requests: pale bone when merged, amber when open, slate when closed without merging.
+- **The scales show how many issues were dealt with.** Each side has 24 scales, and the share left whole is the share of the latest hundred issues that are closed. The rest are dark gaps scattered over the body, so a project whose issues pile up looks ragged from across the tank. Gold scales are closed issues labelled `question`, in proportion. A project with no issues is bare.
+- **Length and height follow the number of pull requests** on a log scale, so a project with 300 pull requests stays visible beside one with 20,500 and the two still look clearly different.
 - **Swim speed follows recent activity**: the number of pull requests and issues opened in the last 90 days.
 - **Age is read in the panel, not in the tank**: creation date, years, last push, and the lifecycle decision with the date that decided it.
 
-Click a body to read its panel: project link and theme, age, upkeep, the bone split (merged, open, closed), the scale split (open issues, questions), and the five most recent pull requests with links. The reading bar counts projects, lifecycle states, pull requests, and issues.
+Click a body to read its health card:
+
+| Row | What it says |
+| --- | --- |
+| Age | Years old and creation date |
+| Upkeep | Days since the last update, pull requests and issues opened in the last 90 days ("at least" when the latest hundred do not reach back that far), and the lifecycle |
+| Skeleton | Pull requests in all, the share of finished ones that were merged rather than closed, and how many are open |
+| Scales | How whole the scales are, how many of the latest issues are still open, and how many open issues are over 30 days old with no comment at all |
+
+An unanswered issue says more about neglect than the number of open issues, because popular, healthy projects always have many open. The panel also lists the five most recent pull requests with links. The reading bar counts projects, lifecycle states, pull requests, and issues.
 
 Data boundaries: each project costs three unauthenticated GitHub requests (the repository, the latest hundred pull requests, the latest hundred issues), and GitHub allows 60 an hour per address, so loading eight projects uses 24 of them. Only the latest hundred of each list are drawn. For a large project the pull request total is marked "about": GitHub reports pages, not a count, so it is rounded up to the next hundred. The issue total is exact and comes from one search request per project. Search allows ten a minute; when it refuses, the total is marked "up to" and is only a limit. When a project cannot be read its error is listed and the rest still load.
 
