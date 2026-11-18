@@ -807,8 +807,35 @@ let anim = 0 // seconds of animation; stands still while paused
 let lastFrame = 0
 let murk = 0 // displayed water stress, eased toward the simulated value
 
+let snapping = false // a picture was asked for; taken right after the next frame is drawn
+
 function frame(now: number) {
   requestAnimationFrame(frame)
+  paint(now)
+  if (snapping) savePicture()
+}
+
+// The 3D canvas can only be read in the frame it was drawn, so this runs straight after painting.
+function savePicture() {
+  snapping = false
+  const out = document.createElement('canvas')
+  out.width = scene.width
+  out.height = scene.height
+  const g = out.getContext('2d')!
+  g.drawImage(scene, 0, 0)
+  g.drawImage(overlay, 0, 0, out.width, out.height)
+  const name = mode === 'projects' ? 'projects' : `${data.repo.replace(/[^\w.-]+/g, '_')}-seed-${$<HTMLInputElement>('#seed').value}`
+  out.toBlob((blob) => {
+    if (!blob) return note('Could not save the picture.', true)
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `${name}.png`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }, 'image/png')
+}
+
+function paint(now: number) {
   const dt = Math.min(0.1, (now - lastFrame) / 1000)
   lastFrame = now
   if (!tank) return
@@ -947,6 +974,7 @@ function frame(now: number) {
   }
 }
 
+document.querySelector('#snap')?.addEventListener('click', () => (snapping = true)) // gone if there is no WebGL
 $('#tab-eco').addEventListener('click', () => showMode('ecosystem'))
 $('#tab-projects').addEventListener('click', () => showMode('projects'))
 $('#pback').addEventListener('click', showRepos)

@@ -134,6 +134,7 @@ button.ghost:hover { background: none; border-color: var(--glow); color: var(--g
 .view { position: relative; aspect-ratio: 8 / 5; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 #overlay { pointer-events: none; }
+#snap { position: absolute; right: 12px; bottom: 12px; padding: 5px 12px; background: rgba(1, 8, 16, 0.55); backdrop-filter: blur(6px); }
 #scene { cursor: crosshair; } /* click a fish to inspect it */
 .view p { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 64px 15%; text-align: center; color: var(--dim); font-style: italic; } /* shown if WebGL is unavailable, clear of the captions */
 .caption {
