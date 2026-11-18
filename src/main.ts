@@ -80,7 +80,14 @@ let pickedPr: PullSummary | null = null
 
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
 const send = (c: Command) => worker.postMessage(c)
-worker.onerror = () => ($('#error').textContent = 'The simulation stopped unexpectedly. Reload the page to start again.')
+// One line under the header: failures in red, progress and success as a plain note.
+function note(text: string, failed = false) {
+  const el = $('#error')
+  el.textContent = text
+  el.classList.toggle('note', !failed)
+}
+
+worker.onerror = () => note('The simulation stopped unexpectedly. Reload the page to start again.', true)
 worker.onmessage = (e: MessageEvent<State>) => {
   const next = e.data
   const now = performance.now()
@@ -181,16 +188,16 @@ function use(d: Dataset) {
 async function importFrom(input: string) {
   const button = $<HTMLButtonElement>('#import')
   button.disabled = true
-  $('#error').textContent = 'Importing...'
+  note('Importing...')
   try {
     const result = await importRepo(input, {
       days: Number($<HTMLSelectElement>('#days').value) || undefined,
       token: $<HTMLInputElement>('#token').value,
     })
     use(result.dataset)
-    $('#error').textContent = `Imported with ${result.requests} of ${result.budget} requests.`
+    note(`Imported with ${result.requests} of ${result.budget} requests.`)
   } catch (err) {
-    $('#error').textContent = `Import failed: ${(err as Error).message} The previous dataset is still loaded.`
+    note(`Import failed: ${(err as Error).message} The previous dataset is still loaded.`, true)
   } finally {
     button.disabled = false
   }
@@ -217,9 +224,9 @@ $('#file').addEventListener('change', async () => {
   if (!file) return
   try {
     use(loadDataset(await file.text()))
-    $('#error').textContent = ''
+    note('')
   } catch (err) {
-    $('#error').textContent = `Could not open that dataset: ${(err as Error).message} The previous dataset is still loaded.`
+    note(`Could not open that dataset: ${(err as Error).message} The previous dataset is still loaded.`, true)
   } finally {
     $<HTMLInputElement>('#file').value = '' // so reopening the same file fires change again
   }
@@ -723,7 +730,7 @@ function selectPull(p: PullSummary | null) {
 async function openPulls(project: Project) {
   const button = $<HTMLButtonElement>('#show-pulls')
   button.disabled = true
-  $('#error').textContent = `Reading open pull requests of ${project.repo}...`
+  note(`Reading open pull requests of ${project.repo}...`)
   try {
     const set = await readPulls(project.repo)
     pullSet = set
@@ -736,9 +743,9 @@ async function openPulls(project: Project) {
     pullLegend()
     selectPull(null)
     $('#pback').hidden = false
-    $('#error').textContent = ''
+    note('')
   } catch (err) {
-    $('#error').textContent = `Could not read pull requests: ${(err as Error).message} The project tank is still shown.`
+    note(`Could not read pull requests: ${(err as Error).message} The project tank is still shown.`, true)
   } finally {
     button.disabled = false
   }
@@ -774,12 +781,12 @@ function useProjects(set: ProjectSet) {
 async function loadProjects(input: string) {
   const button = $<HTMLButtonElement>('#pload')
   button.disabled = true
-  $('#error').textContent = 'Loading projects...'
+  note('Loading projects...')
   try {
     useProjects(await fetchProjects(input.trim() || DEFAULT_REPOS.join(' ')))
-    $('#error').textContent = ''
+    note('')
   } catch (err) {
-    $('#error').textContent = `Could not load projects: ${(err as Error).message}${projects ? ' The previous tank is still shown.' : ''}`
+    note(`Could not load projects: ${(err as Error).message}${projects ? ' The previous tank is still shown.' : ''}`, true)
     if (!projects) $('#preadout').textContent = 'No projects loaded. Each project costs three GitHub requests; without a token GitHub allows 60 an hour.'
   } finally {
     button.disabled = false

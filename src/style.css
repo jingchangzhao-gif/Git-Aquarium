@@ -117,6 +117,7 @@ button.ghost:hover { background: none; border-color: var(--glow); color: var(--g
 
 #error { max-width: 1320px; margin: 0 auto 12px; color: #ffb3bd; font-style: italic; }
 #error:empty { display: none; }
+#error.note { color: var(--dim); }
 
 .deck { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
 .column { display: grid; gap: 18px; min-width: 0; }
