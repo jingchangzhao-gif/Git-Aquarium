@@ -8,7 +8,7 @@ import { demo } from './demo'
 import { explain, key, parseAnswer, repoAnswer, repoQuestion, summarize, unknownEvidence, type Answer, type Claim, type Context, type Sample } from './explain'
 import { P, RULES, TRAITS, hashState, lifespanTicks, maxEnergy, type EventKind, type Organism, type State, type Trait } from './sim'
 import { COLORS, createTank, silhouette, type ProjectDraw, type Swimmer } from './tank'
-import { DEFAULT_REPOS, countIssues, countPulls, fetchProjects, type Project, type ProjectSet } from './projects'
+import { DEFAULT_REPOS, countIssues, countPulls, demoProjects, fetchProjects, healthOf, type Project, type ProjectSet } from './projects'
 import { readPulls, STALE_DAYS, type Check, type PullSet, type PullSummary } from './pulls'
 import { buildPullFish, PULL_COLORS } from './prfish'
 import { buildProject } from './fish'
@@ -571,7 +571,7 @@ const sum = (parts: { total: number; exact: boolean }[], inexact: string) =>
 function readout() {
   if (!projects) return
   const by = (k: string) => projects!.projects.filter((p) => p.lifecycle === k).length
-  $('#preadout').textContent =
+  $('#preadout').textContent = (projects.source === 'synthetic' ? 'Fictional demo · ' : '') +
     `${projects.projects.length} projects · ${by('active')} active · ${by('quiet')} quiet · ${by('abandoned')} abandoned · ` +
     `${sum(projects.projects.map((p) => p.prs), 'about')} PRs · ${sum(projects.projects.map((p) => p.issues), 'up to')} issues`
   const notices = $<HTMLDetailsElement>('#pnotices')
@@ -616,17 +616,25 @@ function selectProject(a: Agent | null) {
     else dd.append(value)
     facts.append(el('dt', label), dd)
   }
-  const since = Date.parse(p.created)
-  const years = Number.isFinite(since) ? (Date.now() - since) / 31_557_600_000 : 0
+  const h = healthOf(p, Date.now())
+  const pct = (share: number) => `${Math.round(share * 100)}%`
+  const ago = (days: number) => (days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days.toLocaleString('en')} days ago`)
   const projectLink = el(p.url ? 'a' : 'span', p.repo) // no link unless GitHub gave a github.com address
   if (projectLink instanceof HTMLAnchorElement) Object.assign(projectLink, { href: p.url, target: '_blank', rel: 'noopener' })
   row('Project', projectLink)
   row('Theme', p.theme)
-  row('Age', `${p.created.slice(0, 10)} · ${years.toFixed(1)} years old`)
-  row('Upkeep', `last push ${p.pushed.slice(0, 10)} · ${p.quietDays} days quiet · ${Math.round(p.activity * 100)}% recent activity`)
-  row('Lifecycle', p.lifecycle)
-  row('Bones', `${count(p.prs, 'about')} pull requests · ${pulls.merged} merged · ${pulls.open} open · ${pulls.closed} closed in the latest ${p.prs.recent.length}`)
-  row('Scales', `${count(p.issues, 'up to')} issues · ${issues.open} open · ${issues.question} marked question in the latest ${p.issues.recent.length}`)
+  // The health card: age and upkeep, skeleton, scales. Shares cover the latest 100 records, as the panel says.
+  const atLeast = h.opened.atLeast ? 'at least ' : ''
+  row('Age', `${h.years.toFixed(1)} years old · created ${p.created.slice(0, 10)}`)
+  row('Upkeep', `last update ${ago(h.lastUpdate)} · ${atLeast}${h.opened.pulls} pull requests and ${atLeast}${h.opened.issues} issues opened in the last 90 days · ${p.lifecycle}`)
+  row('Skeleton', `${count(p.prs, 'about')} pull requests` +
+    (h.merged === null ? ' · none finished yet' : ` · ${pct(h.merged)} of finished ones merged`) +
+    ` · ${pulls.open} open (latest ${p.prs.recent.length})`)
+  row('Scales', h.complete === null
+    ? `${count(p.issues, 'up to')} issues · no scales yet`
+    : `${pct(h.complete)} whole · ${issues.open} of the latest ${p.issues.recent.length} issues still open` +
+      ` · ${h.unanswered} unanswered for over 30 days · ${count(p.issues, 'up to')} issues in all` +
+      (issues.question ? ` · ${issues.question} marked question` : ''))
   const recent = el('ol', '', 'recent')
   for (const pr of p.prs.recent.slice(0, 5)) {
     const li = el('li')
@@ -645,7 +653,8 @@ function selectProject(a: Agent | null) {
   show.type = 'button'
   show.id = 'show-pulls'
   show.addEventListener('click', () => void openPulls(p))
-  box.replaceChildren(who, facts, el('h3', 'Latest pull requests'), recent, show)
+  // A fictional project has no pull requests on GitHub to open.
+  box.replaceChildren(who, facts, el('h3', 'Latest pull requests'), recent, ...(projects?.source === 'recorded' ? [show] : []))
 }
 
 // Up to eight small fish, parked in two rows so they stay in the camera's view.
@@ -747,24 +756,27 @@ function showRepos() {
   $('#pback').hidden = true
 }
 
+function useProjects(set: ProjectSet) {
+  projects = set
+  agents = placeProjects(set.projects)
+  picked = null
+  pickedPr = null
+  view = 'repos'
+  document.body.dataset.view = view
+  $('#pback').hidden = true
+  selectPull(null)
+  projectRev++
+  readout()
+  projectLegend()
+  selectProject(null)
+}
+
 async function loadProjects(input: string) {
   const button = $<HTMLButtonElement>('#pload')
   button.disabled = true
   $('#error').textContent = 'Loading projects...'
   try {
-    const set = await fetchProjects(input.trim() || DEFAULT_REPOS.join(' '))
-    projects = set
-    agents = placeProjects(set.projects)
-    picked = null
-    pickedPr = null
-    view = 'repos'
-    document.body.dataset.view = view
-    $('#pback').hidden = true
-    selectPull(null)
-    projectRev++
-    readout()
-    projectLegend()
-    selectProject(null)
+    useProjects(await fetchProjects(input.trim() || DEFAULT_REPOS.join(' ')))
     $('#error').textContent = ''
   } catch (err) {
     $('#error').textContent = `Could not load projects: ${(err as Error).message}${projects ? ' The previous tank is still shown.' : ''}`
@@ -779,10 +791,7 @@ function showMode(next: 'ecosystem' | 'projects') {
   document.body.dataset.mode = next
   $('#tab-eco').setAttribute('aria-pressed', String(next === 'ecosystem'))
   $('#tab-projects').setAttribute('aria-pressed', String(next === 'projects'))
-  if (next === 'projects' && !projects) {
-    view = 'repos'
-    void loadProjects('')
-  }
+  if (next === 'projects' && !projects) useProjects(demoProjects()) // opens offline; real repositories load on request
 }
 
 // ---- The tank (every animation frame) -----------------------------------------------------------
@@ -934,6 +943,7 @@ function frame(now: number) {
 $('#tab-eco').addEventListener('click', () => showMode('ecosystem'))
 $('#tab-projects').addEventListener('click', () => showMode('projects'))
 $('#pback').addEventListener('click', showRepos)
+$('#pdemo').addEventListener('click', () => useProjects(demoProjects()))
 $<HTMLFormElement>('#psource').addEventListener('submit', (e) => {
   e.preventDefault()
   void loadProjects($<HTMLInputElement>('#prepos').value)
