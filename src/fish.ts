@@ -53,6 +53,9 @@ const eyeMaterial = new THREE.MeshStandardMaterial({ color: EYE, roughness: 0.2 
 const rockMaterial = new THREE.MeshStandardMaterial({ color: '#7c7568', roughness: 0.95 })
 const weedMaterial = waving(new THREE.MeshStandardMaterial({ color: '#3f7d5a', roughness: 0.9, side: THREE.DoubleSide }), true)
 
+const SCALES = 24 // per side
+const ROWS = 4
+
 // Half-height of the body at a normalized position along it, from nose (+1) to tail (-1).
 function girth(u: number) {
   // Widest a quarter of the way back from the nose, tapering to a thin tail stock.
@@ -105,8 +108,9 @@ function buildFish(p: Project): THREE.Group {
   group.add(bone)
 
   const bones: Record<'merged' | 'open' | 'closed', THREE.BufferGeometry[]> = { merged: [], open: [], closed: [] }
-  // Every pull request gets a rib, but a dense list would close into a solid screen: at most 60 are drawn.
-  const recent = p.prs.recent.slice(0, 60)
+  // The skeleton grows with the pull request total: 4 ribs per doubling, at most 60 so it never closes into a screen.
+  // Each rib is coloured by one of the latest pull requests.
+  const recent = p.prs.recent.slice(0, Math.min(60, Math.round(4 * Math.log2(1 + p.prs.total))))
   for (let i = 0; i < recent.length; i++) {
     const t = 0.06 + 0.88 * (recent.length === 1 ? 0.5 : i / (recent.length - 1))
     const point = spine.getPointAt(t)
@@ -122,16 +126,30 @@ function buildFish(p: Project): THREE.Group {
     if (mesh) group.add(mesh)
   }
 
+  // Scale completeness: SCALES slots a side, and the share left whole is the share of the latest issues that were closed.
+  // The missing ones are dark gaps scattered over the flank, so a neglected fish looks ragged from across the tank.
+  // Gold scales are the closed issues labelled `question`, in proportion. No issues at all: a bare fish.
   const plates: Record<'closed' | 'open' | 'question', THREE.BufferGeometry[]> = { closed: [], open: [], question: [] }
   const issues = p.issues.recent
-  for (let i = 0; i < issues.length; i++) {
-    const u = issues.length === 1 ? 0 : -0.86 + 1.72 * (i / (issues.length - 1))
-    const k = girth(u)
-    const theta = (i % 2 ? 1 : -1) * (0.5 + 0.3 * Math.sin(i * 1.7))
-    const plate = new THREE.CircleGeometry((issues[i].question ? 0.05 : 0.044) * size, 5)
-    plate.rotateX(-theta)
-    plate.translate(u * half, Math.sin(theta) * (height / 2) * k * 0.64, Math.cos(theta) * (width / 2) * k * 0.96)
-    plates[issues[i].question ? 'question' : issues[i].open ? 'open' : 'closed'].push(plate)
+  if (issues.length) {
+    const closed = issues.filter((i) => !i.open)
+    const whole = Math.round((SCALES * closed.length) / issues.length)
+    const gold = closed.length ? Math.round((whole * closed.filter((i) => i.question).length) / closed.length) : 0
+    for (let slot = 0; slot < SCALES; slot++) {
+      const rank = (slot * 7) % SCALES // 7 and 24 share no factor: every slot gets a distinct rank, spread over the body
+      const kind = rank >= whole ? 'open' : rank < gold ? 'question' : 'closed'
+      const row = slot % ROWS
+      const u = -0.68 + 1.2 * ((Math.floor(slot / ROWS) + (row % 2) * 0.5) / (SCALES / ROWS))
+      const k = girth(u)
+      const theta = -0.95 + (1.9 * row) / (ROWS - 1)
+      for (const side of [1, -1]) {
+        const plate = new THREE.CircleGeometry((kind === 'open' ? 0.07 : 0.088) * size, 6)
+        plate.rotateX(-theta)
+        plate.translate(u * half, Math.sin(theta) * (height / 2) * k * 0.82, Math.cos(theta) * (width / 2) * k * 1.02)
+        if (side < 0) plate.scale(1, 1, -1)
+        plates[kind].push(plate)
+      }
+    }
   }
   for (const state of ['closed', 'open', 'question'] as const) {
     const mesh = plates[state].length ? merged(plates[state], scales[state], false) : null
