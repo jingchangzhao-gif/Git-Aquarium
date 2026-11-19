@@ -82,9 +82,10 @@ async function explain(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
-export default defineConfig(({ command }) => ({
-  // GitHub Pages serves the app under /Git-Aquarium/; dev and preview keep the root path.
-  base: command === 'build' ? '/Git-Aquarium/' : '/',
+export default defineConfig(({ command, isPreview }) => ({
+  // GitHub Pages serves the app under /Git-Aquarium/. Preview serves that same build, so it uses the same
+  // base (the page is then at http://localhost:4173/Git-Aquarium/); only `pnpm dev` keeps the root path.
+  base: command === 'build' || isPreview ? '/Git-Aquarium/' : '/',
   plugins: [{
     name: 'ecologist',
     configureServer: (server) => void server.middlewares.use('/api/explain', explain),
