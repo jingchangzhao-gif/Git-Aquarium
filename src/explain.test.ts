@@ -24,6 +24,7 @@ test('the rule-based explanation ties the collapse to the CI failures it can cit
   const cited = [...answer.facts, ...answer.rules].flatMap((claim) => claim.evidence)
 
   expect(answer.interpretation).toContain('CI penalty')
+  expect(answer.interpretation).toContain('murky water') // the penalty also limits sight, not only energy
   for (const failure of c.events.filter((e) => e.kind === 'CI_FAILED')) expect(cited).toContain(key(failure))
   expect(unknownEvidence(answer, c.events.map(key))).toEqual([]) // it only cites what has been replayed
   expect(answer.facts[0].text).toMatch(/^The population went from \d+ to \d+ organisms/)

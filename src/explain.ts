@@ -119,7 +119,7 @@ export function explain(question: string, c: Context): Answer {
   if (Math.abs(change) < Math.max(3, 0.1 * size(then))) {
     interpretation = `${who} was roughly stable: ${plural(born, 'birth')} against ${plural(dead, 'death')}.`
   } else if (change < 0 && peak > 0) {
-    interpretation = `The fall coincides with the CI penalty. While ${plural(new Set(failures.map((f) => f.group)).size, 'workflow-and-branch group')} had an unanswered failure, ${lineage === null ? 'the organisms of the affected lineages' : 'each of its organisms'} paid up to ${(worst * P.maxPenalty).toFixed(3)} extra energy per tick, and starvation accounts for ${starved} of the ${plural(dead, 'death')}.` +
+    interpretation = `The fall coincides with the CI penalty. While ${plural(new Set(failures.map((f) => f.group)).size, 'workflow-and-branch group')} had an unanswered failure, ${lineage === null ? 'the organisms of the affected lineages' : 'each of its organisms'} paid up to ${(worst * P.maxPenalty).toFixed(3)} extra energy per tick in murky water that hid food further than ${P.murkSight} units away, and starvation accounts for ${starved} of the ${plural(dead, 'death')}.` +
       (commits < earlier ? ` Commits also slowed (${commits} against ${earlier} in the period before), so less food arrived${fed}.` : '')
   } else if (change < 0 && starved >= aged) {
     interpretation = `No CI penalty was active, and most deaths were starvation: ${plural(commits, 'commit')} added food in this period against ${earlier} before it, which did not feed a population of this size.`
