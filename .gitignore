@@ -1,3 +1,5 @@
 node_modules
 dist
 .skillpilot
+test-results
+playwright-report

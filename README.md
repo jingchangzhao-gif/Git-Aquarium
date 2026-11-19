@@ -335,7 +335,7 @@ The initial performance target for a specified desktop test machine is an averag
 
 ### Validation results
 
-Measured on 2026-11-15 on one machine: Apple M5, 24 GB, Node.js 22.21.1, and Chrome 157 running headless with GPU rendering at 1440 by 1000. The unit tests are in the repository (`pnpm test`, 9 tests). The browser checks were run by a script and are not part of the repository. The frame rate, tick time, and stability figures were measured before events were made to act on their own lineage and were not repeated; the two live imports were.
+Measured on 2026-11-15 on one machine: Apple M5, 24 GB, Node.js 22.21.1, and Chrome 157 running headless with GPU rendering at 1440 by 1000. The unit tests are in the repository (`pnpm test`, 9 tests). The browser checks were run by a script and are not part of the repository; since 2026-11-19 the behaviour checks are (`e2e/app.e2e.ts`, `pnpm test:e2e`), though the frame-rate measurement is not. The frame rate, tick time, and stability figures were measured before events were made to act on their own lineage and were not repeated; the two live imports were.
 
 | Target | Result |
 | --- | --- |
@@ -383,6 +383,8 @@ pnpm install
 pnpm dev     # open the printed local URL
 pnpm test    # determinism, snapshot resume, bounds, mapping rules, import normalization, and explanation checks
 pnpm build   # type-check and production build
+pnpm preview # serve that build as GitHub Pages will, at http://localhost:4173/Git-Aquarium/
+pnpm test:e2e  # browser tests against the production build, in the installed Chrome; GitHub is never contacted
 ```
 
 The app opens on the synthetic demo, which needs no network access. To replay a real project, enter a public repository as `owner/repo` or a github.com URL and press Import. Reset replays the same frozen dataset from the same seed.
