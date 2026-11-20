@@ -8,6 +8,7 @@ import { defineConfig } from 'vite'
 import { parseAnswer, unknownEvidence } from './src/explain.ts'
 import { publicRepo, writeAllowed } from './src/account.ts'
 import { topicChange, type Form } from './src/projects.ts'
+import { MERGED_QUERY } from './src/anatomy.ts'
 
 const MODEL = 'claude-opus-5-5'
 const MAX_BODY = 64_000 // bytes: the page sends a bounded summary, never source code
@@ -137,13 +138,10 @@ function readBody(req: IncomingMessage, max: number): Promise<string> {
   })
 }
 
-// Merged pull requests and the issues GitHub itself reports them as closing. One GraphQL call, so the
-// relation is GitHub's, not something parsed from a description.
-const MERGED = `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){pullRequests(states:MERGED,last:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url mergedAt closingIssuesReferences(first:10){nodes{number}}}}}}`
 
 async function mergedWithIssues(name: string): Promise<unknown[]> {
   const [owner, repo] = name.split('/')
-  const data = JSON.parse(await gh(['api', 'graphql', '-f', `query=${MERGED}`, '-f', `owner=${owner}`, '-f', `name=${repo}`]))
+  const data = JSON.parse(await gh(['api', 'graphql', '-f', `query=${MERGED_QUERY}`, '-f', `owner=${owner}`, '-f', `name=${repo}`]))
   const nodes = data?.data?.repository?.pullRequests?.nodes
   return (Array.isArray(nodes) ? nodes : []).map((n: Record<string, unknown>) => ({
     number: n.number,

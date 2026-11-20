@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  anatomyOf, displayName, featureId, featureSlug, issueId, pullId, repositoryFeatures, scaleId,
+  MERGED_QUERY, anatomyOf, displayName, featureId, featureSlug, issueId, pullId, repositoryFeatures, scaleId,
   scaleTint, visibleIssues,
 } from './anatomy'
 
@@ -120,4 +120,11 @@ describe('scale surface', () => {
     expect(scaleTint(-3).mix).toBe(0)
     expect(scaleTint(4).roughness).toBeGreaterThan(scaleTint(1).roughness)
   })
+})
+
+it('the merged pull request query asks for the newest page, not the oldest', () => {
+  const args = /pullRequests\(([^)]*\{[^}]*\}[^)]*)\)/.exec(MERGED_QUERY)?.[1] ?? ''
+  const newest = /first:100/.test(args) && /direction:DESC/.test(args) || /last:100/.test(args) && /direction:ASC/.test(args)
+  expect(args).toContain('states:MERGED')
+  expect(newest).toBe(true) // last:100 with DESC returned vitejs/vite merges from 2020, not 2026
 })

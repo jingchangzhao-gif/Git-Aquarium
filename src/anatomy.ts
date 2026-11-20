@@ -4,6 +4,10 @@
 // to one General bone, and an issue matching no feature or several is shown as unclassified, never guessed.
 // Nothing here renders; every id is stable for a repository, so a reload cannot move an issue to another scale.
 
+// Merged pull requests and the issues GitHub itself reports them as closing. One GraphQL call, so the
+// relation is GitHub's, not something parsed from a description.
+export const MERGED_QUERY = `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){pullRequests(states:MERGED,first:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url mergedAt closingIssuesReferences(first:10){nodes{number}}}}}}`
+
 export const GENERAL_SLUG = 'general'
 export const MAX_FEATURES = 6 // big bones in the overview; the rest of the features are listed in the side panel
 export const MAX_ISSUES_PER_FEATURE = 2 // small bones in the overview; the rest are listed in the side panel
