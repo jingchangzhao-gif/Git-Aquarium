@@ -8,7 +8,8 @@ import { demo } from './demo'
 import { explain, key, parseAnswer, repoAnswer, repoQuestion, summarize, unknownEvidence, type Answer, type Claim, type Context, type Sample } from './explain'
 import { P, RULES, TRAITS, hashState, lifespanTicks, maxEnergy, type EventKind, type Organism, type State, type Trait } from './sim'
 import { COLORS, createTank, silhouette, type ProjectDraw, type Swimmer } from './tank'
-import { DEFAULT_REPOS, countIssues, countPulls, demoProjects, fetchProjects, healthOf, type Project, type ProjectSet } from './projects'
+import { DEFAULT_REPOS, countIssues, countPulls, demoProjects, fetchProjects, healthOf, type Form, type Project, type ProjectSet } from './projects'
+import { fetchAccountProjects, loadAccount, saveFinished, upkeepWith, type Account } from './account'
 import { readPulls, STALE_DAYS, type Check, type PullSet, type PullSummary } from './pulls'
 import { buildPullFish, PULL_COLORS } from './prfish'
 import { buildProject } from './fish'
@@ -74,6 +75,7 @@ let agents: Agent[] = []
 let picked: Agent | null = null
 let projectRev = 0 // bumped when the data changes, so the tank rebuilds its meshes once
 let view: 'repos' | 'pulls' = 'repos' // the projects mode drills into one repository's open pull requests
+let account: Account | null = null // the local GitHub CLI account, when its tank is loaded
 let pullSet: PullSet | null = null
 let prSpots: { pull: PullSummary; x: number; y: number; z: number; yaw: number }[] = []
 let pickedPr: PullSummary | null = null
@@ -578,8 +580,10 @@ const sum = (parts: { total: number; exact: boolean }[], inexact: string) =>
 function readout() {
   if (!projects) return
   const by = (k: string) => projects!.projects.filter((p) => p.lifecycle === k).length
+  const finished = by('finished') + by('seaweed') + by('rock')
   $('#preadout').textContent = (projects.source === 'synthetic' ? 'Fictional demo · ' : '') +
-    `${projects.projects.length} projects · ${by('active')} active · ${by('quiet')} quiet · ${by('abandoned')} abandoned · ` +
+    `${projects.projects.length} projects · ${by('active')} active · ${by('slowing')} slowing · ${finished} finished forms` +
+    `${by('unknown') ? ` · ${by('unknown')} unknown` : ''} · ` +
     `${sum(projects.projects.map((p) => p.prs), 'about')} PRs · ${sum(projects.projects.map((p) => p.issues), 'up to')} issues`
   const notices = $<HTMLDetailsElement>('#pnotices')
   notices.open = true
@@ -625,7 +629,8 @@ function selectProject(a: Agent | null) {
   }
   const h = healthOf(p, Date.now())
   const pct = (share: number) => `${Math.round(share * 100)}%`
-  const ago = (days: number) => (days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days.toLocaleString('en')} days ago`)
+  const ago = (days: number | null) =>
+    days === null ? 'unknown (GitHub gave no push date)' : days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days.toLocaleString('en')} days ago`
   const projectLink = el(p.url ? 'a' : 'span', p.repo) // no link unless GitHub gave a github.com address
   if (projectLink instanceof HTMLAnchorElement) Object.assign(projectLink, { href: p.url, target: '_blank', rel: 'noopener' })
   row('Project', projectLink)
@@ -633,7 +638,8 @@ function selectProject(a: Agent | null) {
   // The health card: age and upkeep, skeleton, scales. Shares cover the latest 100 records, as the panel says.
   const atLeast = h.opened.atLeast ? 'at least ' : ''
   row('Age', `${h.years.toFixed(1)} years old · created ${p.created.slice(0, 10)}`)
-  row('Upkeep', `last update ${ago(h.lastUpdate)} · ${atLeast}${h.opened.pulls} pull requests and ${atLeast}${h.opened.issues} issues opened in the last 90 days · ${p.lifecycle}`)
+  row('Upkeep', `last update ${ago(h.lastUpdate)} · ${p.lifecycle} · swim speed ${p.speed.toFixed(2)}` +
+    ` · ${atLeast}${h.opened.pulls} pull requests and ${atLeast}${h.opened.issues} issues opened in the last 90 days`)
   row('Skeleton', `${count(p.prs, 'about')} pull requests` +
     (h.merged === null ? ' · none finished yet' : ` · ${pct(h.merged)} of finished ones merged`) +
     ` · ${pulls.open} open (latest ${p.prs.recent.length})`)
@@ -660,8 +666,48 @@ function selectProject(a: Agent | null) {
   show.type = 'button'
   show.id = 'show-pulls'
   show.addEventListener('click', () => void openPulls(p))
+  // Finished is a setting on the project, not a guess from quiet months: only the owner can write it.
+  const finishedBox = el('div', '', 'finished')
+  if (p.own && account) {
+    finishedBox.append(el('h3', 'Finished'))
+    const mark = document.createElement('input')
+    mark.type = 'checkbox'
+    mark.id = 'p-finished'
+    mark.checked = p.finished
+    const form = document.createElement('select')
+    form.id = 'p-form'
+    for (const name of ['fish', 'seaweed', 'rock'] as Form[]) {
+      const option = document.createElement('option')
+      option.value = name
+      option.textContent = name
+      option.selected = p.form === name
+      form.append(option)
+    }
+    const save = el('button', 'Save', 'ghost')
+    save.type = 'button'
+    save.addEventListener('click', () => void (async () => {
+      if (!confirm(`This writes repository topics to ${p.repo} on GitHub. Continue?`)) return
+      save.disabled = true
+      try {
+        const topics = await saveFinished(p.repo, mark.checked, form.value as Form)
+        const upkeep = upkeepWith(p, topics)
+        useProjects({ ...projects!, projects: projects!.projects.map((x) => (x.repo === p.repo ? { ...x, ...upkeep } : x)) })
+        note(`${p.repo}: ${mark.checked ? `finished as ${form.value}` : 'finished mark cleared'}.`)
+        selectProject(agents.find((x) => x.project.repo === p.repo) ?? null)
+      } catch (error) {
+        note(`Could not save ${p.repo}: ${(error as Error).message}`, true)
+      } finally {
+        save.disabled = false
+      }
+    })())
+    const done = el('label')
+    done.append(mark, document.createTextNode(' finished'))
+    const shape = el('label')
+    shape.append(document.createTextNode('form '), form)
+    finishedBox.append(done, shape, save)
+  }
   // A fictional project has no pull requests on GitHub to open.
-  box.replaceChildren(who, facts, el('h3', 'Latest pull requests'), recent, ...(projects?.source === 'recorded' ? [show] : []))
+  box.replaceChildren(who, facts, el('h3', 'Latest pull requests'), recent, ...(projects?.source === 'recorded' ? [show] : []), finishedBox)
 }
 
 // Up to eight small fish, parked in two rows so they stay in the camera's view.
@@ -788,6 +834,23 @@ async function loadProjects(input: string) {
   } catch (err) {
     note(`Could not load projects: ${(err as Error).message}${projects ? ' The previous tank is still shown.' : ''}`, true)
     if (!projects) $('#preadout').textContent = 'No projects loaded. Each project costs three GitHub requests; without a token GitHub allows 60 an hour.'
+  } finally {
+    button.disabled = false
+  }
+}
+
+// The account tank reads the local GitHub CLI account through the dev server; the token never reaches the page.
+async function loadAccountTank() {
+  const button = $<HTMLButtonElement>('#paccount')
+  button.disabled = true
+  note('Reading the local GitHub CLI account...')
+  try {
+    const a = await loadAccount()
+    account = a
+    useProjects(await fetchAccountProjects(a, (done, total) => note(`Loading repositories: ${done} of ${total}.`)))
+    note(`@${a.login}: ${projects!.projects.length} public ${projects!.projects.length === 1 ? 'repository' : 'repositories'} in the tank.`)
+  } catch (err) {
+    note(`Could not load the account tank: ${(err as Error).message}`, true)
   } finally {
     button.disabled = false
   }
@@ -979,6 +1042,7 @@ $('#tab-eco').addEventListener('click', () => showMode('ecosystem'))
 $('#tab-projects').addEventListener('click', () => showMode('projects'))
 $('#pback').addEventListener('click', showRepos)
 $('#pdemo').addEventListener('click', () => useProjects(demoProjects()))
+$('#paccount')?.addEventListener('click', () => void loadAccountTank())
 $<HTMLFormElement>('#psource').addEventListener('submit', (e) => {
   e.preventDefault()
   void loadProjects($<HTMLInputElement>('#prepos').value)

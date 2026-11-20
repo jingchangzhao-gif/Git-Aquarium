@@ -2,9 +2,12 @@
 // recorded summary. It exists only in `pnpm dev` and `pnpm preview`, and only answers when a key is set
 // (ANTHROPIC_API_KEY=... pnpm dev). The key never leaves this process; without it the page explains by rule.
 import Anthropic from '@anthropic-ai/sdk'
+import { spawn } from 'node:child_process'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { defineConfig } from 'vite'
 import { parseAnswer, unknownEvidence } from './src/explain.ts'
+import { publicRepo, writeAllowed } from './src/account.ts'
+import { topicChange, type Form } from './src/projects.ts'
 
 const MODEL = 'claude-opus-5-5'
 const MAX_BODY = 64_000 // bytes: the page sends a bounded summary, never source code
@@ -82,13 +85,159 @@ async function explain(req: IncomingMessage, res: ServerResponse) {
   }
 }
 
+// ---- The account tank: the local GitHub CLI is the only source of identity ------------------------
+// The token stays inside this process: `gh` runs as a child, and the page only receives public project
+// fields. This endpoint therefore exists only in `pnpm dev` and `pnpm preview`; the hosted build is static.
+
+const GH_TIMEOUT = 15_000
+const FORMS: Form[] = ['fish', 'seaweed', 'rock']
+const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
+
+function send(res: ServerResponse, status: number, payload: object) {
+  res.statusCode = status
+  res.setHeader('content-type', 'application/json')
+  res.end(JSON.stringify(payload))
+}
+
+function gh(args: string[], input = ''): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('gh', args, { windowsHide: true })
+    let out = ''
+    let err = ''
+    const timer = setTimeout(() => {
+      child.kill()
+      reject(new Error('the GitHub CLI did not answer within 15 seconds.'))
+    }, GH_TIMEOUT)
+    timer.unref()
+    child.stdout.on('data', (chunk) => (out += chunk))
+    child.stderr.on('data', (chunk) => (err += chunk))
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      reject(new Error(`the GitHub CLI could not be started (${error.message}). Install it and run gh auth login.`))
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      if (code === 0) return resolve(out)
+      const line = err.trim().split('\n').find((l) => l.trim()) ?? ''
+      reject(new Error(line.slice(0, 200) || `the GitHub CLI exited with ${code}.`))
+    })
+    child.stdin.end(input)
+  })
+}
+
+function readBody(req: IncomingMessage, max: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let text = ''
+    req.on('data', (chunk) => {
+      text += chunk
+      if (text.length > max) reject(new Error('too large'))
+    })
+    req.on('end', () => resolve(text))
+    req.on('error', reject)
+  })
+}
+
+// A repository's records for the account tank. They go through `gh` so the 5,000-an-hour token
+// allowance is used, not the page's anonymous 60; nothing about the token reaches the reply.
+async function repoData(req: IncomingMessage, res: ServerResponse) {
+  if (req.method !== 'GET') return send(res, 405, { reason: 'method' })
+  const name = new URL(req.url ?? '', 'http://localhost').searchParams.get('name') ?? ''
+  if (!REPO.test(name)) return send(res, 400, { reason: 'bad request' })
+  try {
+    const query = encodeURIComponent(`repo:${name} is:issue`)
+    const [pulls, issues, search] = await Promise.all([
+      ghPaged(`/repos/${name}/pulls?state=all&per_page=100&sort=created&direction=desc`),
+      gh(['api', `/repos/${name}/issues?state=all&per_page=100&sort=created&direction=desc`]).then((t) => JSON.parse(t)),
+      // Search has its own allowance; a refusal only makes the issue total a limit.
+      gh(['api', `/search/issues?q=${query}&per_page=1`]).then((t) => JSON.parse(t)).catch(() => null),
+    ])
+    const total = search && typeof search.total_count === 'number' ? search.total_count : null
+    send(res, 200, { pulls, issues, total })
+  } catch (error) {
+    send(res, 502, { reason: (error as Error).message.slice(0, 300) })
+  }
+}
+
+// `gh api --include` prints the headers, then a blank line, then the body: the Link header names the last page.
+async function ghPaged(path: string): Promise<{ body: unknown; pages: number }> {
+  const raw = await gh(['api', '--include', path])
+  const cut = raw.search(/\r?\n\r?\n/)
+  const head = cut === -1 ? '' : raw.slice(0, cut)
+  const body = cut === -1 ? raw : raw.slice(cut).replace(/^\r?\n\r?\n/, '')
+  const last = /[?&]page=(\d+)>;\s*rel="last"/.exec(head)
+  return { body: JSON.parse(body), pages: last ? Number(last[1]) : 0 }
+}
+
+// Every public repository the signed-in account owns, all pages, filtered on this side.
+async function account(req: IncomingMessage, res: ServerResponse) {
+  if (req.method !== 'GET') return send(res, 405, { reason: 'method' })
+  try {
+    const login = (await gh(['api', 'user', '--jq', '.login'])).trim()
+    const repos = []
+    for (let page = 1; page <= 10; page++) {
+      const list = JSON.parse(await gh(['api', `/user/repos?affiliation=owner&visibility=public&per_page=100&page=${page}`]))
+      const batch = Array.isArray(list) ? list : []
+      for (const raw of batch) {
+        const r = raw as { owner?: { login?: string }; visibility?: string; fork?: boolean }
+        if (r.owner?.login !== login || r.visibility !== 'public' || r.fork === true) continue
+        const project = publicRepo(raw)
+        if (project) repos.push(project)
+      }
+      if (batch.length < 100) break
+    }
+    send(res, 200, { login, repos })
+  } catch (error) {
+    send(res, 503, { reason: (error as Error).message.slice(0, 300) })
+  }
+}
+
+// Writing `aquarium-finished` and `aquarium-form-*` changes repository metadata, so it is a POST the
+// page only sends after the owner confirms; unrelated topics are kept and a failure changes nothing.
+async function finished(req: IncomingMessage, res: ServerResponse) {
+  if (req.method !== 'POST') return send(res, 405, { reason: 'method' })
+  if (!writeAllowed(req.headers)) return send(res, 403, { reason: 'Only this page can change topics.' })
+  let payload: { repo?: unknown; finished?: unknown; form?: unknown }
+  try {
+    payload = JSON.parse(await readBody(req, 4096))
+  } catch {
+    return send(res, 400, { reason: 'bad request' })
+  }
+  const repo = typeof payload.repo === 'string' ? payload.repo : ''
+  const form = FORMS.includes(payload.form as Form) ? (payload.form as Form) : 'fish'
+  if (!REPO.test(repo) || typeof payload.finished !== 'boolean') return send(res, 400, { reason: 'bad request' })
+  try {
+    const login = (await gh(['api', 'user', '--jq', '.login'])).trim()
+    const meta = JSON.parse(await gh(['api', `/repos/${repo}`]))
+    if (meta?.owner?.login !== login) {
+      return send(res, 403, { reason: `@${login} does not own ${repo}, so its topics can only be read, not changed.` })
+    }
+    const current: string[] = Array.isArray(meta.topics) ? meta.topics.filter((t: unknown): t is string => typeof t === 'string') : []
+    const next = topicChange(current, payload.finished, form)
+    if (next.length === current.length && next.every((t, i) => t === current[i])) return send(res, 200, { topics: current })
+    await gh(['api', '--method', 'PUT', `/repos/${repo}/topics`, '--input', '-'], JSON.stringify({ names: next }))
+    send(res, 200, { topics: next })
+  } catch (error) {
+    send(res, 502, { reason: (error as Error).message.slice(0, 300) })
+  }
+}
+
 export default defineConfig(({ command, isPreview }) => ({
   // GitHub Pages serves the app under /Git-Aquarium/. Preview serves that same build, so it uses the same
   // base (the page is then at http://localhost:4173/Git-Aquarium/); only `pnpm dev` keeps the root path.
   base: command === 'build' || isPreview ? '/Git-Aquarium/' : '/',
   plugins: [{
     name: 'ecologist',
-    configureServer: (server) => void server.middlewares.use('/api/explain', explain),
-    configurePreviewServer: (server) => void server.middlewares.use('/api/explain', explain),
+    configureServer: (server) => {
+      server.middlewares.use('/api/explain', explain)
+      server.middlewares.use('/api/account/repo', repoData)
+      server.middlewares.use('/api/account', account)
+      server.middlewares.use('/api/finished', finished)
+    },
+    configurePreviewServer: (server) => {
+      server.middlewares.use('/api/explain', explain)
+      server.middlewares.use('/api/account/repo', repoData)
+      server.middlewares.use('/api/account', account)
+      server.middlewares.use('/api/finished', finished)
+    },
   }],
 }))

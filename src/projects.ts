@@ -2,8 +2,23 @@
 // issues become scales, and the repository's own description is the spine's theme.
 // Nothing here renders; every function is deterministic given the records and a clock.
 
-export type Lifecycle = 'active' | 'quiet' | 'abandoned'
+export type Lifecycle = 'active' | 'slowing' | 'seaweed' | 'rock' | 'finished' | 'unknown'
+export type Form = 'fish' | 'seaweed' | 'rock'
 export type PullState = 'open' | 'merged' | 'closed'
+
+// Finished is a setting its owner writes into the repository's topics, never a guess from inactivity.
+export const FINISHED_TOPIC = 'aquarium-finished'
+export function formTopic(form: Form): string {
+  return `aquarium-form-${form}`
+}
+
+// The topic set after setting or clearing the finished mark; unrelated topics are always kept.
+export function topicChange(current: string[], finished: boolean, form: Form): string[] {
+  const keep = current.filter((t) => t !== FINISHED_TOPIC && !/^aquarium-form-/.test(t))
+  return finished ? [...keep, FINISHED_TOPIC, formTopic(form)] : keep
+}
+
+const FORMS: Form[] = ['fish', 'seaweed', 'rock']
 
 export interface Pull {
   number: number
@@ -38,7 +53,11 @@ export interface Project {
   activity: number // 0..1, how much landed in the last 90 days
   size: number // 0.55..1.35, the fish's length, from the pull request total
   lifecycle: Lifecycle
-  quietDays: number
+  form: Form // what the project is drawn as: a finished project keeps the form its owner chose
+  finished: boolean // set by the owner through the aquarium-finished topic
+  own: boolean // true only for repositories the local account may write to
+  speed: number // 0..1, how fast the body swims; upkeep slows it down
+  quietDays: number | null // null when GitHub gave no push date; never treated as "today"
 }
 
 export interface ProjectSet {
@@ -94,12 +113,39 @@ export function sizeOf(total: number): number {
   return 0.55 + (0.8 * Math.log2(1 + capped)) / 15
 }
 
-export function lifecycleOf(meta: { archived: boolean; pushed_at: string }, now: number): { lifecycle: Lifecycle; quietDays: number } {
-  const pushed = Date.parse(meta.pushed_at)
-  const quietDays = Number.isFinite(pushed) ? Math.max(0, Math.floor((now - pushed) / DAY)) : 0
-  if (meta.archived || quietDays > 365) return { lifecycle: 'abandoned', quietDays }
-  if (quietDays > 90) return { lifecycle: 'quiet', quietDays }
-  return { lifecycle: 'active', quietDays }
+// Upkeep is deterministic: the same push date and clock give the same stage and speed.
+// A finished project keeps the form its owner picked, whatever its last push was.
+export interface Upkeep {
+  lifecycle: Lifecycle
+  form: Form
+  finished: boolean
+  quietDays: number | null
+  speed: number
+}
+
+export function lifecycleOf(
+  meta: { archived: boolean; pushed_at?: string; topics?: string[] }, now: number,
+): Upkeep {
+  const topics = (meta.topics ?? []).filter((t): t is string => typeof t === 'string')
+  const finished = topics.includes(FINISHED_TOPIC)
+  const chosen = topics.map((t) => /^aquarium-form-(fish|seaweed|rock)$/.exec(t)?.[1]).find((f): f is Form => FORMS.includes(f as Form))
+  const pushed = Date.parse(meta.pushed_at ?? '')
+  const quietDays = Number.isFinite(pushed) ? Math.max(0, Math.floor((now - pushed) / DAY)) : null
+  if (finished) {
+    const form = chosen ?? 'fish'
+    return { lifecycle: 'finished', form, finished: true, quietDays, speed: form === 'fish' ? 0.6 : 0 }
+  }
+  // Archived and a year silent are the same thing to a viewer: a rock.
+  if (meta.archived || (quietDays !== null && quietDays > 365)) {
+    return { lifecycle: 'rock', form: 'rock', finished: false, quietDays, speed: 0 }
+  }
+  if (quietDays === null) return { lifecycle: 'unknown', form: 'fish', finished: false, quietDays, speed: 0.4 }
+  if (quietDays >= 180) return { lifecycle: 'seaweed', form: 'seaweed', finished: false, quietDays, speed: 0 }
+  // Ninety days is still active; after that the fish slows, reaching a stop as seaweed time approaches.
+  if (quietDays > 90) {
+    return { lifecycle: 'slowing', form: 'fish', finished: false, quietDays, speed: 1 - 0.8 * (quietDays - 90) / 90 }
+  }
+  return { lifecycle: 'active', form: 'fish', finished: false, quietDays, speed: 1 }
 }
 
 export function countPulls(list: Pull[]): { open: number; merged: number; closed: number } {
@@ -157,9 +203,14 @@ function toIssue(raw: Json): Issue | null {
 // `pullPages` is the last page number GitHub reported for the pull request list, or 0 when it fitted on one page.
 // `issueCount` is the exact number of issues from GitHub's search, when that request was allowed.
 export function readProject(
-  repo: string, meta: Json, pulls: Json[], issues: Json[], now: number, pullPages = 0, issueCount?: number,
+  repo: string, meta: Json, pulls: Json[], issues: Json[], now: number, pullPages = 0, issueCount?: number, own = false,
 ): Project {
-  const { lifecycle, quietDays } = lifecycleOf({ archived: meta.archived === true, pushed_at: text(meta.pushed_at, 32) }, now)
+  const upkeep = lifecycleOf({
+    archived: meta.archived === true,
+    pushed_at: text(meta.pushed_at, 32),
+    // Topics are plain strings, not objects: `list` would drop them all.
+    topics: Array.isArray(meta.topics) ? meta.topics.filter((t): t is string => typeof t === 'string').slice(0, 20) : [],
+  }, now)
   const recentPulls = list(pulls).map(toPull)
   const recentIssues = list(issues).map(toIssue).filter((i): i is Issue => i !== null)
   const cutoff = now - 90 * DAY
@@ -186,8 +237,8 @@ export function readProject(
     issues: { total: issueTotal, exact: counted || !cutOff, recent: recentIssues },
     activity: Math.max(0.2, Math.min(1, 0.2 + 0.8 * Math.min(1, fresh / 30))),
     size: sizeOf(prTotal),
-    lifecycle,
-    quietDays,
+    ...upkeep,
+    own,
   }
 }
 
@@ -257,7 +308,7 @@ export async function fetchProjects(input: string, now = Date.now()): Promise<Pr
 // went through it (skeleton), and how many of its questions were dealt with (scales).
 export interface Health {
   years: number
-  lastUpdate: number // days since the last push
+  lastUpdate: number | null // days since the last push; null when GitHub gave no date
   opened: { pulls: number; issues: number; atLeast: boolean } // in the last 90 days; atLeast when the latest 100 did not reach back that far
   merged: number | null // of the latest pull requests that were finished, the share merged rather than closed unmerged
   complete: number | null // of the latest issues, the share closed: how whole the scales are
@@ -284,13 +335,30 @@ export function healthOf(p: Project, now: number): Health {
 
 // A tank that opens without the network: fictional repositories, made into records the same way GitHub's would be
 // read, so the demo goes through readProject like real data. Each one shows a different kind of upkeep.
-const DEMO = [
+interface DemoProject {
+  name: string
+  theme: string
+  years: number
+  quiet: number
+  prs: number
+  perMonth: number
+  merge: number
+  issues: number
+  complete: number
+  answered: number
+  archived?: boolean
+  topics?: string[]
+}
+
+const DEMO: DemoProject[] = [
   { name: 'harbor', theme: 'A busy web framework with a large team', years: 8, quiet: 0, prs: 12_000, perMonth: 300, merge: 0.8, issues: 5200, complete: 0.86, answered: 0.95 },
   { name: 'lantern', theme: 'A small, tidy command-line tool', years: 3, quiet: 2, prs: 240, perMonth: 8, merge: 0.92, issues: 70, complete: 0.96, answered: 1 },
   { name: 'driftwood', theme: 'Popular, but its questions pile up', years: 6, quiet: 4, prs: 3100, perMonth: 40, merge: 0.45, issues: 2600, complete: 0.42, answered: 0.35 },
   { name: 'tidepool', theme: 'Nobody has pushed since the spring', years: 5, quiet: 150, prs: 640, perMonth: 2, merge: 0.75, issues: 300, complete: 0.7, answered: 0.6 },
+  { name: 'garden', theme: 'Left alone for more than six months', years: 4, quiet: 250, prs: 150, perMonth: 1, merge: 0.8, issues: 90, complete: 0.75, answered: 0.7 },
   { name: 'kelp', theme: 'Untouched for more than a year', years: 9, quiet: 520, prs: 410, perMonth: 1, merge: 0.7, issues: 220, complete: 0.6, answered: 0.5 },
   { name: 'anchor', theme: 'Finished and archived by its owners', years: 11, quiet: 900, prs: 1800, perMonth: 1, merge: 0.85, issues: 900, complete: 0.97, answered: 0.9, archived: true },
+  { name: 'ledger', theme: 'Declared finished, though it was quiet long before', years: 7, quiet: 300, prs: 950, perMonth: 1, merge: 0.9, issues: 400, complete: 0.88, answered: 0.8, topics: ['aquarium-finished', 'aquarium-form-fish'] },
 ]
 
 export function demoProjects(now = Date.now()): ProjectSet {
@@ -312,14 +380,14 @@ export function demoProjects(now = Date.now()): ProjectSet {
       return { number, title: `Question ${number}`, created_at: iso(daysAgo), state: open ? 'open' : 'closed',
         comments: open && rand() > d.answered ? 0 : 1 + Math.floor(rand() * 4), labels: rand() < 0.1 ? [{ name: 'question' }] : [] }
     })
-    const meta = { name: d.name, description: d.theme, created_at: iso(d.years * 365.25), pushed_at: iso(d.quiet), archived: d.archived === true }
+    const meta = { name: d.name, description: d.theme, created_at: iso(d.years * 365.25), pushed_at: iso(d.quiet), archived: d.archived === true, topics: d.topics ?? [] }
     return readProject(repo, meta, pulls.map((p) => (p.state === 'open' ? { ...p, merged_at: null } : p)), issues, now,
       d.prs > PAGE ? Math.ceil(d.prs / PAGE) : 0, d.issues)
   })
   return {
     source: 'synthetic', projects, at: new Date(now).toISOString(),
     notices: [
-      'These six projects are fictional, made up so the tank opens without the network. Load projects to read real ones from GitHub.',
+      'These projects are fictional, made up so the tank opens without the network. Load projects or your account to read real ones from GitHub.',
       'Bones are pull requests, scales are issues, and a repository is not a living thing: this mapping is a design choice, not a measurement of the code.',
     ],
   }

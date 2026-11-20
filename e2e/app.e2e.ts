@@ -226,7 +226,7 @@ test.describe('projects', () => {
     await page.goto('./')
     await page.locator('#tab-projects').click()
     await expect(page.locator('body')).toHaveAttribute('data-mode', 'projects')
-    await expect(page.locator('#plegend li')).toHaveCount(6)
+    await expect(page.locator('#plegend li')).toHaveCount(8)
     await expect(page.locator('#preadout')).toContainText('Fictional demo')
     await page.locator('#plegend button[data-repo="demo/driftwood"]').click()
     const card = page.locator('#project')
@@ -241,7 +241,27 @@ test.describe('projects', () => {
     await page.locator('#pload').click() // blank loads seven well-known repositories, all unreachable here
     await expect(page.locator('#error')).toContainText('Could not load projects')
     await expect(page.locator('#error')).not.toHaveClass(/note/)
-    await expect(page.locator('#plegend li')).toHaveCount(6)
+    await expect(page.locator('#plegend li')).toHaveCount(8)
+  })
+})
+
+test.describe('local endpoints', () => {
+  // The repository name is invalid on purpose: no request here can reach the GitHub CLI, whatever the guard does.
+  const body = JSON.stringify({ repo: 'not a repository', finished: true, form: 'rock' })
+
+  test('another website cannot write topics through the finished endpoint', async ({ request }) => {
+    const res = await request.post('/api/finished', {
+      headers: { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site', 'content-type': 'text/plain;charset=UTF-8' },
+      data: body,
+    })
+    expect(res.status()).toBe(403)
+  })
+
+  test('the page itself still reaches the finished endpoint', async ({ page }) => {
+    await page.goto('./')
+    const status = await page.evaluate(async (data) =>
+      (await fetch('/api/finished', { method: 'POST', headers: { 'content-type': 'application/json' }, body: data })).status, body)
+    expect(status).toBe(400) // past the guard, refused only for the invalid name
   })
 })
 
@@ -268,6 +288,6 @@ test.describe('layout and fallbacks', () => {
     await expect(page.locator('#snap')).toHaveCount(0)
     await expect(page.locator('#s-pop')).not.toHaveText('0')
     await page.locator('#tab-projects').click()
-    await expect(page.locator('#plegend li')).toHaveCount(6)
+    await expect(page.locator('#plegend li')).toHaveCount(8)
   })
 })

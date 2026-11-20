@@ -24,7 +24,8 @@ const FLOOR = -0.15
 // A deterministic layout: the same projects always start in the same places.
 export function placeProjects(projects: Project[]): Agent[] {
   return projects.map((project, i) => {
-    const kind: Kind = project.lifecycle === 'abandoned' ? (project.archived ? 'rock' : 'seaweed') : 'fish'
+    // The form is the project's own: a finished project keeps the shape its owner chose.
+    const kind: Kind = project.form
     const angle = (i / Math.max(1, projects.length)) * Math.PI * 2
     return {
       id: project.repo,
@@ -35,7 +36,8 @@ export function placeProjects(projects: Project[]): Agent[] {
       // rocks and seaweed sit on the open sand at the front, where they cannot be mistaken for scenery
       z: kind === 'fish' ? TANK.zMin + (TANK.zMax - TANK.zMin) * ((i * 7) % 5) / 4 : 1.1 + 0.5 * ((i * 3) % 3),
       yaw: kind === 'fish' ? (i % 2 ? 0.12 : Math.PI - 0.12) : angle,
-      speed: project.activity,
+      // Upkeep decides the speed stage; a finished fish still swims at a steady pace.
+      speed: project.speed,
       phase: i * 1.7,
       still: kind !== 'fish',
     }

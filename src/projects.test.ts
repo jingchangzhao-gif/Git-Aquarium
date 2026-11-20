@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  countIssues, countPulls, demoProjects, fetchProjects, healthOf, lifecycleOf, parseLastPage, parseRepos, readProject, sizeOf,
-  type Issue, type Pull,
+  FINISHED_TOPIC, countIssues, countPulls, demoProjects, fetchProjects, formTopic, healthOf, lifecycleOf, parseLastPage,
+  parseRepos, readProject, sizeOf, topicChange, type Issue, type Pull,
 } from './projects'
 
 const DAY = 86_400_000
@@ -45,11 +45,28 @@ describe('sizeOf', () => {
 
 describe('lifecycleOf', () => {
   const at = (days: number) => new Date(NOW - days * DAY).toISOString()
-  it('separates active, quiet, and abandoned work', () => {
-    expect(lifecycleOf({ archived: false, pushed_at: at(10) }, NOW).lifecycle).toBe('active')
-    expect(lifecycleOf({ archived: false, pushed_at: at(91) }, NOW)).toMatchObject({ lifecycle: 'quiet', quietDays: 91 })
-    expect(lifecycleOf({ archived: false, pushed_at: at(366) }, NOW).lifecycle).toBe('abandoned')
-    expect(lifecycleOf({ archived: true, pushed_at: at(1) }, NOW).lifecycle).toBe('abandoned')
+  it('turns quiet months into slowing, seaweed, and rock', () => {
+    expect(lifecycleOf({ archived: false, pushed_at: at(10) }, NOW)).toMatchObject({ lifecycle: 'active', speed: 1 })
+    expect(lifecycleOf({ archived: false, pushed_at: at(90) }, NOW)).toMatchObject({ lifecycle: 'active', speed: 1 })
+    expect(lifecycleOf({ archived: false, pushed_at: at(91) }, NOW)).toMatchObject({ lifecycle: 'slowing', quietDays: 91 })
+    expect(lifecycleOf({ archived: false, pushed_at: at(180) }, NOW)).toMatchObject({ lifecycle: 'seaweed', form: 'seaweed', speed: 0 })
+    expect(lifecycleOf({ archived: false, pushed_at: at(365) }, NOW)).toMatchObject({ lifecycle: 'seaweed', quietDays: 365 })
+    expect(lifecycleOf({ archived: false, pushed_at: at(366) }, NOW)).toMatchObject({ lifecycle: 'rock', form: 'rock' })
+    expect(lifecycleOf({ archived: true, pushed_at: at(1) }, NOW)).toMatchObject({ lifecycle: 'rock', form: 'rock' })
+    expect(lifecycleOf({ archived: false }, NOW)).toMatchObject({ lifecycle: 'unknown', quietDays: null, speed: 0.4 })
+  })
+
+  it('lets an explicit finished setting win over quiet months', () => {
+    const finished = lifecycleOf({ archived: false, pushed_at: at(500), topics: [FINISHED_TOPIC, formTopic('seaweed')] }, NOW)
+    expect(finished).toMatchObject({ lifecycle: 'finished', form: 'seaweed', speed: 0, finished: true })
+    expect(lifecycleOf({ archived: false, pushed_at: at(500), topics: [FINISHED_TOPIC] }, NOW)).toMatchObject({ lifecycle: 'finished', form: 'fish' })
+    expect(lifecycleOf({ archived: false, pushed_at: at(500), topics: ['unrelated'] }, NOW).lifecycle).toBe('rock')
+  })
+
+  it('changes topics without disturbing the others', () => {
+    const set = topicChange(['docs', 'aquarium-finished', 'aquarium-form-rock'], true, 'seaweed')
+    expect(set).toEqual(['docs', FINISHED_TOPIC, 'aquarium-form-seaweed'])
+    expect(topicChange(set, false, 'fish')).toEqual(['docs'])
   })
 })
 
@@ -200,8 +217,9 @@ describe('the offline demo tank', () => {
     vi.unstubAllGlobals()
     expect(fetch).not.toHaveBeenCalled()
     expect(set.source).toBe('synthetic')
-    expect(set.projects.map((p) => p.lifecycle)).toEqual(['active', 'active', 'active', 'quiet', 'abandoned', 'abandoned'])
-    expect(set.projects[5].archived).toBe(true)
+    expect(set.projects.map((p) => p.lifecycle)).toEqual(['active', 'active', 'active', 'slowing', 'seaweed', 'rock', 'rock', 'finished'])
+    expect(set.projects.find((p) => p.repo === 'demo/anchor')).toMatchObject({ archived: true, lifecycle: 'rock' })
+    expect(set.projects.find((p) => p.repo === 'demo/ledger')).toMatchObject({ lifecycle: 'finished', form: 'fish', finished: true })
     const tidy = healthOf(set.projects[1], NOW), piling = healthOf(set.projects[2], NOW)
     expect(tidy.complete!).toBeGreaterThan(0.85) // the tidy tool's scales are nearly whole...
     expect(piling.complete!).toBeLessThan(0.6) // ...the popular one's are not,
