@@ -143,3 +143,11 @@ export function upkeepWith(project: Project, topics: string[], now = Date.now())
   return lifecycleOf({ archived: project.archived, pushed_at: project.pushed, topics }, now)
 }
 
+
+// Only the page itself may write topics. Another website can POST to localhost too, but only as text/plain or a
+// form (anything else needs a CORS preflight, which Vite refuses for other origins), and its browser marks the
+// request cross-site. Requests without fetch metadata (curl, old browsers) are refused as well.
+export function writeAllowed(headers: Record<string, string | string[] | undefined>): boolean {
+  const type = String(headers['content-type'] ?? '').split(';')[0].trim().toLowerCase()
+  return type === 'application/json' && headers['sec-fetch-site'] === 'same-origin'
+}

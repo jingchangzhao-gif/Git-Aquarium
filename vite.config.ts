@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { defineConfig } from 'vite'
 import { parseAnswer, unknownEvidence } from './src/explain.ts'
-import { publicRepo } from './src/account.ts'
+import { publicRepo, writeAllowed } from './src/account.ts'
 import { topicChange, type Form } from './src/projects.ts'
 
 const MODEL = 'claude-opus-5-5'
@@ -215,6 +215,7 @@ async function account(req: IncomingMessage, res: ServerResponse) {
 // page only sends after the owner confirms; unrelated topics are kept and a failure changes nothing.
 async function finished(req: IncomingMessage, res: ServerResponse) {
   if (req.method !== 'POST') return send(res, 405, { reason: 'method' })
+  if (!writeAllowed(req.headers)) return send(res, 403, { reason: 'Only this page can change topics.' })
   let payload: { repo?: unknown; finished?: unknown; form?: unknown }
   try {
     payload = JSON.parse(await readBody(req, 4096))
