@@ -52,7 +52,7 @@ The population figures are simulated measurements from one seeded run. They are 
 
 ![The Projects demo tank: six fictional repositories as fish, seaweed, and a rock. The selected fish, driftwood, has dark gaps among its scales, and its health card reads 6.0 years old, last update 4 days ago, about 3,100 pull requests with 49% of finished ones merged, and scales 46% whole with 24 issues unanswered for over 30 days.](docs/projects.png)
 
-Projects is a second reading of the tank, switched by the `Projects` tab beside the title. It opens on a demo tank of six fictional projects, one for each kind of upkeep, so it needs no network; **Load projects** reads real repositories from GitHub. Each repository becomes one body: a fish while it is maintained, a grey and dull fish once nobody has pushed to it for 90 days, a clump of seaweed once that reaches a year, and a rock once it is archived. Every body carries its repository's name.
+Projects is a second reading of the tank, switched by the `Projects` tab beside the title. It opens on a demo tank of fictional projects, one for each kind of upkeep, so it needs no network; **Load projects** reads real repositories from GitHub, and **My account** fills the tank from the GitHub CLI account signed in on this machine. Each repository becomes one body: a fish while it is maintained, a slowing fish after 90 days without a push, a clump of seaweed once that reaches half a year, and a rock after a year or an archive. Every body carries its repository's name.
 
 - **The spine is the project's theme**: the repository description, or its name when it has none.
 - **The skeleton is the pull requests.** The rib count grows with the total, four ribs for every doubling, up to sixty so a large project does not turn into a white blur. Each rib is coloured by one of the latest pull requests: pale bone when merged, amber when open, slate when closed without merging.
@@ -73,6 +73,12 @@ Click a body to read its health card:
 An unanswered issue says more about neglect than the number of open issues, because popular, healthy projects always have many open. The panel also lists the five most recent pull requests with links. The reading bar counts projects, lifecycle states, pull requests, and issues.
 
 Data boundaries: each project costs three unauthenticated GitHub requests (the repository, the latest hundred pull requests, the latest hundred issues), and GitHub allows 60 an hour per address, so loading eight projects uses 24 of them. Only the latest hundred of each list are drawn. For a large project the pull request total is marked "about": GitHub reports pages, not a count, so it is rounded up to the next hundred. The issue total is exact and comes from one search request per project. Search allows ten a minute; when it refuses, the total is marked "up to" and is only a limit. When a project cannot be read its error is listed and the rest still load.
+
+### The account tank
+
+**My account** fills the tank from the GitHub CLI account signed in on this machine: every public repository the account owns, newest push first, up to twelve. Nothing is typed and no token reaches the page — the Vite dev server runs `gh` and returns only public project fields, so the button needs `pnpm dev` or `pnpm preview`; the hosted build says so instead of pretending to read an identity.
+
+Upkeep follows `pushed_at` and nothing else: a fish up to 90 days, a slowing fish from 91 to 179, seaweed from 180, and a rock after a year or an archive. A missing push date is shown as unknown, never guessed. **Finished** is a setting, not a guess: the owner can mark a project with the `aquarium-finished` topic and choose its form with `aquarium-form-fish`, `-seaweed`, or `-rock` from the panel. The panel asks first and names the repository; the write keeps unrelated topics, and a failure leaves them unchanged. Only repositories the signed-in account owns show the editor.
 
 ### Pull requests: one open pull request, one small fish
 

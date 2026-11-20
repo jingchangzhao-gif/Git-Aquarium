@@ -396,6 +396,10 @@ body[data-view='repos'] #pull-panel { display: none !important; }
 #project .recent small, #pull .recent small { color: var(--dim); }
 #project .recent a, #pull .recent a { overflow-wrap: anywhere; }
 #show-pulls { margin-top: 14px; }
+#project .finished { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; font-size: 13.5px; }
+#project .finished h3 { width: 100%; }
+#project .finished label { display: inline-flex; align-items: center; gap: 6px; }
+#project .finished select { padding: 4px 6px; }
 
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
 @keyframes surface { from { opacity: 0; transform: translateX(10px); } }

@@ -93,7 +93,7 @@ function buildFish(p: Project): THREE.Group {
     new THREE.Vector2(-1.32, -0.4), new THREE.Vector2(-0.92, -0.16),
   ]))
   tail.scale(size, size, size)
-  const coat = merged([body, tail], p.lifecycle === 'quiet' ? quietSkin : skinMaterial)
+  const coat = merged([body, tail], p.lifecycle === 'slowing' ? quietSkin : skinMaterial)
   if (coat) group.add(coat)
 
   const spine = new THREE.CatmullRomCurve3([
@@ -204,9 +204,10 @@ function buildSeaweed(p: Project): THREE.Group {
   return group
 }
 
-// Archived repositories become rocks, long-silent ones become seaweed; everything else is a fish.
+// The form comes from the project: archived and long-silent repositories are seaweed or rock,
+// and a finished project keeps whatever shape its owner set.
 export function buildProject(p: Project): ProjectShape {
-  const shape: Shape = p.lifecycle === 'abandoned' ? (p.archived ? 'rock' : 'seaweed') : 'fish'
+  const shape = p.form
   const group = shape === 'fish' ? buildFish(p) : shape === 'rock' ? buildRock(p) : buildSeaweed(p)
   return { id: p.repo, shape, group }
 }
