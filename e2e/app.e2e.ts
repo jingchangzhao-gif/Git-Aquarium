@@ -20,6 +20,9 @@ const test = base.extend<{ github: string[]; errors: string[] }>({
   }, { auto: true }],
 })
 
+// The page shows a new tick only when it draws a frame, and software WebGL on a busy CI runner draws its first
+// frames slowly; the replay itself runs on in a worker. So waits on the tick get more than the default 5 s.
+const SLOW_START = { timeout: 30_000 }
 const tick = async (page: Page) => Number((await page.locator('#tick').textContent())?.match(/\d+/)?.[0] ?? -1)
 
 // A small public repository, served from memory: two branches, three commits, one failed CI run.
@@ -48,7 +51,7 @@ test.describe('ecosystem', () => {
     await expect(page.locator('#dataset')).toContainText('synthetic/reef-demo')
     await expect(page.locator('#legend li')).toHaveCount(4)
     const start = await tick(page)
-    await expect.poll(() => tick(page)).toBeGreaterThan(start + 20)
+    await expect.poll(() => tick(page), SLOW_START).toBeGreaterThan(start + 20)
     await expect(page.locator('#s-pop')).not.toHaveText('0')
     await expect(page.locator('#error')).toBeEmpty()
     expect(github).toEqual([])
@@ -56,7 +59,7 @@ test.describe('ecosystem', () => {
 
   test('pausing stops the replay and shows the state hash', async ({ page }) => {
     await page.goto('./')
-    await expect.poll(() => tick(page)).toBeGreaterThan(10)
+    await expect.poll(() => tick(page), SLOW_START).toBeGreaterThan(10)
     await page.locator('#pause').click()
     const held = await tick(page)
     await page.waitForTimeout(700)
@@ -66,7 +69,7 @@ test.describe('ecosystem', () => {
 
   test('clicking a fish follows it in the Organism panel', async ({ page }) => {
     await page.goto('./')
-    await expect.poll(() => tick(page)).toBeGreaterThan(10)
+    await expect.poll(() => tick(page), SLOW_START).toBeGreaterThan(10)
     await page.locator('#pause').click() // still fish are easier to hit
     const box = (await page.locator('#scene').boundingBox())!
     for (let i = 0; i < 300 && (await page.locator('#organism .hint').count()) > 0; i++) {
@@ -79,7 +82,7 @@ test.describe('ecosystem', () => {
   test('filtering a lineage narrows the Ecologist to it', async ({ page }) => {
     await page.goto('./')
     await page.locator('#speed input[value="4"]').check({ force: true }) // the radio itself is visually hidden
-    await expect.poll(() => tick(page)).toBeGreaterThan(100)
+    await expect.poll(() => tick(page), SLOW_START).toBeGreaterThan(100)
     const main = page.locator('#legend button').first()
     await main.click()
     await expect(main).toHaveAttribute('aria-pressed', 'true')
@@ -93,7 +96,7 @@ test.describe('ecosystem', () => {
   test('the Ecologist answers in four labelled parts, by rule, and takes typed questions', async ({ page }) => {
     await page.goto('./')
     await page.locator('#speed input[value="4"]').check({ force: true }) // the radio itself is visually hidden
-    await expect.poll(() => tick(page)).toBeGreaterThan(100)
+    await expect.poll(() => tick(page), SLOW_START).toBeGreaterThan(100)
     await page.locator('#suggest button', { hasText: 'Why did the population change?' }).click()
     const answer = page.locator('#answers > li').first()
     for (const part of [/rule-based explanation/i, /facts/i, /applied rules/i, /interpretation/i, /uncertainty/i]) await expect(answer).toContainText(part)
