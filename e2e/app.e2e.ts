@@ -245,6 +245,26 @@ test.describe('projects', () => {
   })
 })
 
+test.describe('local endpoints', () => {
+  // The repository name is invalid on purpose: no request here can reach the GitHub CLI, whatever the guard does.
+  const body = JSON.stringify({ repo: 'not a repository', finished: true, form: 'rock' })
+
+  test('another website cannot write topics through the finished endpoint', async ({ request }) => {
+    const res = await request.post('/api/finished', {
+      headers: { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site', 'content-type': 'text/plain;charset=UTF-8' },
+      data: body,
+    })
+    expect(res.status()).toBe(403)
+  })
+
+  test('the page itself still reaches the finished endpoint', async ({ page }) => {
+    await page.goto('./')
+    const status = await page.evaluate(async (data) =>
+      (await fetch('/api/finished', { method: 'POST', headers: { 'content-type': 'application/json' }, body: data })).status, body)
+    expect(status).toBe(400) // past the guard, refused only for the invalid name
+  })
+})
+
 test.describe('layout and fallbacks', () => {
   test('a phone-width screen never scrolls sideways, in either mode', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })

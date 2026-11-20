@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  ACCOUNT_LIMIT, loadAccount, parseAccountPayload, pickAccountRepos, publicRepo, saveFinished, upkeepWith,
+  ACCOUNT_LIMIT, loadAccount, parseAccountPayload, pickAccountRepos, publicRepo, saveFinished, upkeepWith, writeAllowed,
 } from './account'
 import { FINISHED_TOPIC, formTopic } from './projects'
 
@@ -90,5 +90,21 @@ describe('the local endpoint', () => {
     await expect(saveFinished('o/r', true, 'rock')).resolves.toEqual(['docs', FINISHED_TOPIC, 'aquarium-form-rock'])
     expect(String(fetch.mock.calls[0])).toContain('/api/finished')
     vi.unstubAllGlobals()
+  })
+})
+
+describe('writeAllowed', () => {
+  const ok = { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' }
+  it('lets only the page itself write topics', () => {
+    expect(writeAllowed(ok)).toBe(true)
+    expect(writeAllowed({ ...ok, 'content-type': 'application/json; charset=utf-8' })).toBe(true)
+  })
+  it('refuses what another website can send without a preflight', () => {
+    expect(writeAllowed({ ...ok, 'content-type': 'text/plain;charset=UTF-8' })).toBe(false) // a no-cors fetch
+    expect(writeAllowed({ ...ok, 'content-type': 'application/x-www-form-urlencoded' })).toBe(false) // a form post
+    expect(writeAllowed({ ...ok, 'sec-fetch-site': 'cross-site' })).toBe(false)
+    expect(writeAllowed({ ...ok, 'sec-fetch-site': 'same-site' })).toBe(false) // another port on localhost
+    expect(writeAllowed({ 'content-type': 'application/json' })).toBe(false) // no browser fetch metadata
+    expect(writeAllowed({})).toBe(false)
   })
 })
