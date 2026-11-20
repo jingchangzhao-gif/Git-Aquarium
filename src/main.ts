@@ -640,14 +640,57 @@ function selectProject(a: Agent | null) {
   row('Age', `${h.years.toFixed(1)} years old · created ${p.created.slice(0, 10)}`)
   row('Upkeep', `last update ${ago(h.lastUpdate)} · ${p.lifecycle} · swim speed ${p.speed.toFixed(2)}` +
     ` · ${atLeast}${h.opened.pulls} pull requests and ${atLeast}${h.opened.issues} issues opened in the last 90 days`)
-  row('Skeleton', `${count(p.prs, 'about')} pull requests` +
-    (h.merged === null ? ' · none finished yet' : ` · ${pct(h.merged)} of finished ones merged`) +
-    ` · ${pulls.open} open (latest ${p.prs.recent.length})`)
-  row('Scales', h.complete === null
-    ? `${count(p.issues, 'up to')} issues · no scales yet`
-    : `${pct(h.complete)} whole · ${issues.open} of the latest ${p.issues.recent.length} issues still open` +
-      ` · ${h.unanswered} unanswered for over 30 days · ${count(p.issues, 'up to')} issues in all` +
-      (issues.question ? ` · ${issues.question} marked question` : ''))
+  // The anatomy: features are the big bones, open issues the small ones and the scale surface, and a
+  // merged pull request that closed an issue the connection. Labels are the only feature record GitHub has.
+  const anatomy = p.anatomy
+  const openIssues = anatomy.issues.filter((i) => i.open)
+  const resolved = anatomy.issues.filter((i) => !i.open)
+  const featureName = (id: string) => anatomy.features.find((f) => f.id === id)?.name ?? 'General'
+  const notes: string[] = []
+  if (anatomy.conflicts) notes.push(`${anatomy.conflicts} issue${anatomy.conflicts === 1 ? '' : 's'} carried more than one feature label and fall back to General`)
+  if (anatomy.unclassified) notes.push(`${anatomy.unclassified} issue${anatomy.unclassified === 1 ? '' : 's'} matched no feature and sit on General`)
+  if (anatomy.hiddenFeatures) notes.push(`${anatomy.hiddenFeatures} more feature${anatomy.hiddenFeatures === 1 ? '' : 's'} share the Other bone (the overview draws six)`)
+  if (anatomy.hiddenIssues) notes.push(`${anatomy.hiddenIssues} open issue${anatomy.hiddenIssues === 1 ? '' : 's'} past the overview limit are listed below, not drawn`)
+  row('Features', `${anatomy.features.length} bone${anatomy.features.length === 1 ? '' : 's'} · ${openIssues.length} open issue${openIssues.length === 1 ? '' : 's'} · ` +
+    `${anatomy.links.length} merged pull request${anatomy.links.length === 1 ? '' : 's'} linked to a closed issue`)
+  row('Pull requests', `${count(p.prs, 'about')} in all · ${pulls.open} open (latest ${p.prs.recent.length})`)
+  row('Issues', `${count(p.issues, 'up to')} in all · ${issues.open} open · ${resolved.length} resolved of the latest ${p.issues.recent.length}`)
+  const featureList = el('ol', '', 'recent')
+  for (const feature of anatomy.features) {
+    const open = openIssues.filter((i) => i.featureId === feature.id).length
+    const li = el('li')
+    li.append(el('span', feature.name), el('small', ` · ${open} open · ${feature.label || 'no feature label'}`))
+    featureList.append(li)
+  }
+  const issueList = el('ol', '', 'recent')
+  for (const issue of openIssues.slice(0, 5)) {
+    const li = el('li')
+    const label = issue.url ? document.createElement('a') : document.createElement('span')
+    if (issue.url) Object.assign(label as HTMLAnchorElement, { href: issue.url, target: '_blank', rel: 'noopener' })
+    label.textContent = `#${issue.number} ${issue.title}`
+    li.append(label, el('small', ` · ${featureName(issue.featureId)}${issue.conflict ? ' · conflicting labels' : ''}`))
+    issueList.append(li)
+  }
+  const historyList = el('ol', '', 'recent')
+  for (const issue of resolved.slice(0, 5)) {
+    const li = el('li')
+    const label = issue.url ? document.createElement('a') : document.createElement('span')
+    if (issue.url) Object.assign(label as HTMLAnchorElement, { href: issue.url, target: '_blank', rel: 'noopener' })
+    label.textContent = `#${issue.number} ${issue.title}`
+    const closes = anatomy.links.filter((l) => l.issueIds.includes(issue.id))
+    li.append(label, el('small', ` · resolved · ${featureName(issue.featureId)}` +
+      (closes.length ? ` · closed by #${closes.map((l) => l.number).join(', #')}` : ' · no linked pull request')))
+    historyList.append(li)
+  }
+  const linkList = el('ol', '', 'recent')
+  for (const link of anatomy.links.slice(0, 5)) {
+    const li = el('li')
+    const label = link.url ? document.createElement('a') : document.createElement('span')
+    if (link.url) Object.assign(label as HTMLAnchorElement, { href: link.url, target: '_blank', rel: 'noopener' })
+    label.textContent = `#${link.number} ${link.title}`
+    li.append(label, el('small', ` · closed ${link.issueIds.map((id) => `#${id.split(':')[1]}`).join(', ')}`))
+    linkList.append(li)
+  }
   const recent = el('ol', '', 'recent')
   for (const pr of p.prs.recent.slice(0, 5)) {
     const li = el('li')
@@ -707,7 +750,14 @@ function selectProject(a: Agent | null) {
     finishedBox.append(done, shape, save)
   }
   // A fictional project has no pull requests on GitHub to open.
-  box.replaceChildren(who, facts, el('h3', 'Latest pull requests'), recent, ...(projects?.source === 'recorded' ? [show] : []), finishedBox)
+  box.replaceChildren(who, facts,
+    el('h3', 'Feature bones'), featureList,
+    ...(openIssues.length ? [el('h3', 'Open issues'), issueList] : []),
+    ...(resolved.length ? [el('h3', 'Resolved issues'), historyList] : []),
+    ...(anatomy.links.length ? [el('h3', 'Pull requests that closed issues'), linkList] : []),
+    ...(notes.length ? [el('p', notes.join('. ') + '.', 'hint')] : []),
+    el('h3', 'Latest pull requests'), recent,
+    ...(projects?.source === 'recorded' ? [show] : []), finishedBox)
 }
 
 // Up to eight small fish, parked in two rows so they stay in the camera's view.

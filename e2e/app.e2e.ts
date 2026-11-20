@@ -230,7 +230,7 @@ test.describe('projects', () => {
     await expect(page.locator('#preadout')).toContainText('Fictional demo')
     await page.locator('#plegend button[data-repo="demo/driftwood"]').click()
     const card = page.locator('#project')
-    for (const row of ['Age', 'Upkeep', 'Skeleton', 'Scales', 'unanswered for over 30 days']) await expect(card).toContainText(row)
+    for (const row of ['Age', 'Upkeep', 'Features', 'Pull requests', 'Issues', 'Feature bones', 'no feature label']) await expect(card).toContainText(row)
     await expect(page.getByRole('button', { name: 'Show open pull requests' })).toHaveCount(0) // demo repositories do not exist
     expect(github).toEqual([])
   })

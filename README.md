@@ -10,7 +10,7 @@ Git Aquarium is an artificial-life simulator that turns GitHub development activ
 
 The goal is to make software history visible, explorable, and explainable through **artificial life, reproducible replay, and evidence-based interpretation**.
 
-> **Project status: the four-week MVP is implemented.** Running today: a seeded, deterministic artificial-life simulation (foraging, energy, reproduction, inheritance, mutation, death), the Git-to-ecology mapping rules, an offline synthetic demo, import of one public GitHub repository, replay with pause, 1x / 2x / 4x speed, reset, and seed, organism inspection, lineage filtering, a population chart, and the Ecologist. The Ecologist explains by fixed rules unless a model key is supplied; the model path was tested against a stand-in server and has not been run against the real API. Measured results and known gaps are under [Validation results](#validation-results). Sections written in the future tense describe the original proposal, and each says where the implementation differs. A second view, Projects, maps one repository to one body: pull requests as bones, issues as scales, and upkeep as movement.
+> **Project status: the four-week MVP is implemented.** Running today: a seeded, deterministic artificial-life simulation (foraging, energy, reproduction, inheritance, mutation, death), the Git-to-ecology mapping rules, an offline synthetic demo, import of one public GitHub repository, replay with pause, 1x / 2x / 4x speed, reset, and seed, organism inspection, lineage filtering, a population chart, and the Ecologist. The Ecologist explains by fixed rules unless a model key is supplied; the model path was tested against a stand-in server and has not been run against the real API. Measured results and known gaps are under [Validation results](#validation-results). Sections written in the future tense describe the original proposal, and each says where the implementation differs. A second view, Projects, maps one repository to one body: features as big bones, open issues as small bones on the scale surface, and merges that closed an issue as links.
 
 ## What you are watching
 
@@ -55,24 +55,26 @@ The population figures are simulated measurements from one seeded run. They are 
 Projects is a second reading of the tank, switched by the `Projects` tab beside the title. It opens on a demo tank of fictional projects, one for each kind of upkeep, so it needs no network; **Load projects** reads real repositories from GitHub, and **My account** fills the tank from the GitHub CLI account signed in on this machine. Each repository becomes one body: a fish while it is maintained, a slowing fish after 90 days without a push, a clump of seaweed once that reaches half a year, and a rock after a year or an archive. Every body carries its repository's name.
 
 - **The spine is the project's theme**: the repository description, or its name when it has none.
-- **The skeleton is the pull requests.** The rib count grows with the total, four ribs for every doubling, up to sixty so a large project does not turn into a white blur. Each rib is coloured by one of the latest pull requests: pale bone when merged, amber when open, slate when closed without merging.
-- **The scales show how many issues were dealt with.** Each side has 24 scales, and the share left whole is the share of the latest hundred issues that are closed. The rest are dark gaps scattered over the body, so a project whose issues pile up looks ragged from across the tank. Gold scales are closed issues labelled `question`, in proportion. A project with no issues is bare.
-- **Length and height follow the number of pull requests** on a log scale, so a project with 300 pull requests stays visible beside one with 20,500 and the two still look clearly different.
+- **The big bones are the project's features.** A feature is a `feature:<slug>` label. An issue with no feature label, with more than one (a conflict), or on a feature past the six-bone overview limit joins one **General** bone; features past the limit also fold into one **Other** bone. GitHub has no feature record, so a label is the only explicit one: folder names and README prose are never turned into bones.
+- **An open issue is a small bone on its feature's bone.** Up to two open issues per feature are drawn, so a busy feature reads as a cluster; the panel lists the rest.
+- **Each feature carries a band of scales.** The more open issues it has, the warmer its tint and the rougher its surface; a feature with none returns to the base colour. A merged pull request that GitHub reports as closing an issue gets a thin link from that issue's small bone to the feature's bone.
+- **Length and height follow the total number of pull requests** on a log scale. The total sets body size; the skeleton shows what the project is made of.
 - **Swim speed follows recent activity**: the number of pull requests and issues opened in the last 90 days.
-- **Age is read in the panel, not in the tank**: creation date, years, last push, and the lifecycle decision with the date that decided it.
+- **A finished fish is simplified**: spine, feature bones, one even scale band, no open-issue bones or links; its history stays in the panel.
 
-Click a body to read its health card:
+Click a body to read its card:
 
 | Row | What it says |
 | --- | --- |
 | Age | Years old and creation date |
-| Upkeep | Days since the last update, pull requests and issues opened in the last 90 days ("at least" when the latest hundred do not reach back that far), and the lifecycle |
-| Skeleton | Pull requests in all, the share of finished ones that were merged rather than closed, and how many are open |
-| Scales | How whole the scales are, how many of the latest issues are still open, and how many open issues are over 30 days old with no comment at all |
+| Upkeep | Last update, lifecycle and swim speed, and the pull requests and issues opened in the last 90 days |
+| Features | How many bones, how many issues are open, and how many merged pull requests are linked to a closed issue |
+| Pull requests | In all, open, and the latest hundred read |
+| Issues | In all, open, and how many of the latest hundred resolved |
 
-An unanswered issue says more about neglect than the number of open issues, because popular, healthy projects always have many open. The panel also lists the five most recent pull requests with links. The reading bar counts projects, lifecycle states, pull requests, and issues.
+The panel also lists the feature bones with their open counts and label, the five newest open issues with their feature, the resolved issues (marked "closed by #N" when a link exists, otherwise "no linked pull request"), the pull requests that closed issues, any conflicts or unclassified fallbacks, and the five most recent pull requests with links.
 
-Data boundaries: each project costs three unauthenticated GitHub requests (the repository, the latest hundred pull requests, the latest hundred issues), and GitHub allows 60 an hour per address, so loading eight projects uses 24 of them. Only the latest hundred of each list are drawn. For a large project the pull request total is marked "about": GitHub reports pages, not a count, so it is rounded up to the next hundred. The issue total is exact and comes from one search request per project. Search allows ten a minute; when it refuses, the total is marked "up to" and is only a limit. When a project cannot be read its error is listed and the rest still load.
+Data boundaries: a typed project costs three unauthenticated GitHub requests (the repository, the latest hundred pull requests, the latest hundred issues), and GitHub allows 60 an hour per address. The account tank reads five per project through the local `gh` (repository lists, issues, search count, labels, and one GraphQL call for merged pull requests and their closing references), so its token is used in the server process and never reaches the page. Only the latest hundred issues and hundred merged pull requests are related; a hand-closed issue has no link. Feature rules come from labels only, and the page never writes, creates, or edits a label. `open_issues_count` counts issues and pull requests together, so it is never printed as an issue count. A pull request total is rounded up to a page and marked "about". When a project cannot be read its error is listed and the rest still load.
 
 ### The account tank
 
@@ -238,7 +240,7 @@ flowchart TD
 - `src/explain.ts`: the Ecologist's rule-based explanation, the bounded summary a model is given, and the checks applied to a model's answer. Pure functions with no DOM or network.
 - `src/main.ts` and `src/style.css`: the page, controls, event log, organism panel, chart, and Ecologist panel. Motion is blended between simulation ticks at display frame rate. The two typefaces (Fraunces and Martian Mono) are bundled at build time, so the page still loads nothing from the network.
 - `src/projects.ts`: the Projects mode. Turns one public repository into a project: pull request totals and the latest hundred, issue totals and the latest hundred, upkeep from the last push, and the lifecycle decision. No DOM and no Three.js.
-- `src/fish.ts`: builds the body for a project: a spine for its theme, ribs for pull requests, scales for issues, and the rock and seaweed forms used by abandoned projects.
+- `src/fish.ts`: builds the body for a project: a spine for its theme, a big bone per feature, an issue small bone and scale band per feature, links for merges that closed issues, and the rock and seaweed forms used by abandoned projects.
 - `src/fishschool.ts`: the small deterministic drift that moves project bodies in the tank.
 - `vite.config.ts`: the optional model endpoint, `POST /api/explain`, served by `pnpm dev` and `pnpm preview` only. The Anthropic SDK is a development dependency used here and nowhere in the page.
 

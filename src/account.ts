@@ -71,11 +71,15 @@ async function readAccountRepo(repo: AccountRepo, now: number): Promise<Project>
     const body = await res.json().catch(() => ({}))
     throw new Error(typeof body.reason === 'string' ? body.reason : `The local endpoint returned ${res.status}.`)
   }
-  const data = (await res.json()) as { pulls: { body: Record<string, unknown>[]; pages: number }; issues: Record<string, unknown>[]; total: number | null }
+  const data = (await res.json()) as {
+    pulls: { body: Record<string, unknown>[]; pages: number }; issues: Record<string, unknown>[]
+    total: number | null; labels?: unknown; merged?: unknown
+  }
   return readProject(repo.fullName, {
     name: repo.name, description: repo.theme, html_url: repo.url, created_at: repo.created,
     pushed_at: repo.pushed, archived: repo.archived, topics: repo.topics,
-  }, data.pulls?.body ?? [], data.issues ?? [], now, data.pulls?.pages ?? 0, data.total ?? undefined, true)
+  }, data.pulls?.body ?? [], data.issues ?? [], now, data.pulls?.pages ?? 0, data.total ?? undefined, true,
+  { labels: data.labels, merged: data.merged })
 }
 
 // Newest first, so a tank of twelve shows the projects that are actually being worked on.
@@ -115,7 +119,7 @@ export async function fetchAccountProjects(
       : ''}. Each costs three GitHub requests, read through the local GitHub CLI and its token allowance.`,
   )
   notices.push('Loading one project does not stop the others: a failure above leaves that project out and the rest in place.')
-  notices.push('Bones are pull requests, scales are issues, and a repository is not a living thing: this mapping is a design choice, not a measurement of the code.')
+  notices.push('Features are bones, issues are small bones and the scale surface, and a merged pull request that closed an issue is a connection; a repository is not a living thing, so this mapping is a design choice, not a measurement of the code.')
   if (projects.some((p) => !p.prs.exact || !p.issues.exact)) {
     notices.push('Only the latest 100 pull requests and issues of each project are drawn; totals marked "about" or "up to" are not exact counts.')
   }

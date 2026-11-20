@@ -2,6 +2,8 @@
 // issues become scales, and the repository's own description is the spine's theme.
 // Nothing here renders; every function is deterministic given the records and a clock.
 
+import { anatomyOf, type Anatomy } from './anatomy.ts'
+
 export type Lifecycle = 'active' | 'slowing' | 'seaweed' | 'rock' | 'finished' | 'unknown'
 export type Form = 'fish' | 'seaweed' | 'rock'
 export type PullState = 'open' | 'merged' | 'closed'
@@ -33,6 +35,7 @@ export interface Issue {
   title: string
   open: boolean
   question: boolean
+  labels: string[] // lowercased names; `feature:` labels place the issue on a bone
   comments: number
   at: string
   url: string
@@ -58,6 +61,9 @@ export interface Project {
   own: boolean // true only for repositories the local account may write to
   speed: number // 0..1, how fast the body swims; upkeep slows it down
   quietDays: number | null // null when GitHub gave no push date; never treated as "today"
+  // Features are the big bones, issues the small bones and the scale surface, and merged pull requests
+  // that closed an issue the connections between them. Read from `feature:` labels; everything else is General.
+  anatomy: Anatomy
 }
 
 export interface ProjectSet {
@@ -194,6 +200,7 @@ function toIssue(raw: Json): Issue | null {
     title: text(raw.title),
     open: raw.state === 'open',
     question: labels.includes('question'),
+    labels: labels.filter(Boolean),
     comments: Math.max(0, Number(raw.comments) || 0),
     at: text(raw.created_at, 32),
     url: link(raw.html_url),
@@ -204,6 +211,7 @@ function toIssue(raw: Json): Issue | null {
 // `issueCount` is the exact number of issues from GitHub's search, when that request was allowed.
 export function readProject(
   repo: string, meta: Json, pulls: Json[], issues: Json[], now: number, pullPages = 0, issueCount?: number, own = false,
+  extra: { labels?: unknown; merged?: unknown } = {},
 ): Project {
   const upkeep = lifecycleOf({
     archived: meta.archived === true,
@@ -239,6 +247,7 @@ export function readProject(
     size: sizeOf(prTotal),
     ...upkeep,
     own,
+    anatomy: anatomyOf(repo, { labels: extra.labels, issues: list(issues), merged: extra.merged }),
   }
 }
 
@@ -299,7 +308,7 @@ export async function fetchProjects(input: string, now = Date.now()): Promise<Pr
   if (projects.some((p) => !p.issues.exact)) {
     notices.push('Issue totals marked "up to" are a limit, not a count: GitHub\'s search, which gives the exact number, allows ten requests a minute and refused. The limit is the highest issue number less the pull requests; discussions share that numbering, so the true count can be much lower.')
   }
-  notices.push('Bones are pull requests, scales are issues, and a repository is not a living thing: this mapping is a design choice, not a measurement of the code.')
+  notices.push('Features are bones, issues are small bones and the scale surface, and a merged pull request that closed an issue is a connection; a repository is not a living thing, so this mapping is a design choice, not a measurement of the code.')
   notices.push('Loading costs three GitHub requests per project, and one search request for its issue count; without a token GitHub allows 60 an hour and ten searches a minute.')
   return { source: 'recorded', projects, notices, at: new Date(now).toISOString() }
 }
@@ -348,17 +357,19 @@ interface DemoProject {
   answered: number
   archived?: boolean
   topics?: string[]
+  features?: string[] // feature:<slug> labels, so the demo shows bones rather than one General bone
+  mixed?: boolean // some issues carry two feature labels, to show the conflict fallback
 }
 
 const DEMO: DemoProject[] = [
-  { name: 'harbor', theme: 'A busy web framework with a large team', years: 8, quiet: 0, prs: 12_000, perMonth: 300, merge: 0.8, issues: 5200, complete: 0.86, answered: 0.95 },
-  { name: 'lantern', theme: 'A small, tidy command-line tool', years: 3, quiet: 2, prs: 240, perMonth: 8, merge: 0.92, issues: 70, complete: 0.96, answered: 1 },
-  { name: 'driftwood', theme: 'Popular, but its questions pile up', years: 6, quiet: 4, prs: 3100, perMonth: 40, merge: 0.45, issues: 2600, complete: 0.42, answered: 0.35 },
-  { name: 'tidepool', theme: 'Nobody has pushed since the spring', years: 5, quiet: 150, prs: 640, perMonth: 2, merge: 0.75, issues: 300, complete: 0.7, answered: 0.6 },
-  { name: 'garden', theme: 'Left alone for more than six months', years: 4, quiet: 250, prs: 150, perMonth: 1, merge: 0.8, issues: 90, complete: 0.75, answered: 0.7 },
-  { name: 'kelp', theme: 'Untouched for more than a year', years: 9, quiet: 520, prs: 410, perMonth: 1, merge: 0.7, issues: 220, complete: 0.6, answered: 0.5 },
-  { name: 'anchor', theme: 'Finished and archived by its owners', years: 11, quiet: 900, prs: 1800, perMonth: 1, merge: 0.85, issues: 900, complete: 0.97, answered: 0.9, archived: true },
-  { name: 'ledger', theme: 'Declared finished, though it was quiet long before', years: 7, quiet: 300, prs: 950, perMonth: 1, merge: 0.9, issues: 400, complete: 0.88, answered: 0.8, topics: ['aquarium-finished', 'aquarium-form-fish'] },
+  { name: 'harbor', theme: 'A busy web framework with a large team', years: 8, quiet: 0, prs: 12_000, perMonth: 300, merge: 0.8, issues: 5200, complete: 0.86, answered: 0.95, features: ['web-ui', 'router', 'cache'] },
+  { name: 'lantern', theme: 'A small, tidy command-line tool', years: 3, quiet: 2, prs: 240, perMonth: 8, merge: 0.92, issues: 70, complete: 0.96, answered: 1, features: ['cli', 'config'] },
+  { name: 'driftwood', theme: 'Popular, but its questions pile up', years: 6, quiet: 4, prs: 3100, perMonth: 40, merge: 0.45, issues: 2600, complete: 0.42, answered: 0.35, features: ['api'], mixed: true },
+  { name: 'tidepool', theme: 'Nobody has pushed since the spring', years: 5, quiet: 150, prs: 640, perMonth: 2, merge: 0.75, issues: 300, complete: 0.7, answered: 0.6, features: ['sync'] },
+  { name: 'garden', theme: 'Left alone for more than six months', years: 4, quiet: 250, prs: 150, perMonth: 1, merge: 0.8, issues: 90, complete: 0.75, answered: 0.7, features: ['tools'] },
+  { name: 'kelp', theme: 'Untouched for more than a year', years: 9, quiet: 520, prs: 410, perMonth: 1, merge: 0.7, issues: 220, complete: 0.6, answered: 0.5, features: ['legacy'] },
+  { name: 'anchor', theme: 'Finished and archived by its owners', years: 11, quiet: 900, prs: 1800, perMonth: 1, merge: 0.85, issues: 900, complete: 0.97, answered: 0.9, archived: true, features: ['core'] },
+  { name: 'ledger', theme: 'Declared finished, though it was quiet long before', years: 7, quiet: 300, prs: 950, perMonth: 1, merge: 0.9, issues: 400, complete: 0.88, answered: 0.8, topics: ['aquarium-finished', 'aquarium-form-fish'], features: ['core', 'export'] },
 ]
 
 export function demoProjects(now = Date.now()): ProjectSet {
@@ -377,18 +388,35 @@ export function demoProjects(now = Date.now()): ProjectSet {
     }))
     const issues = items(d.issues, (number, daysAgo) => {
       const open = rand() > d.complete
-      return { number, title: `Question ${number}`, created_at: iso(daysAgo), state: open ? 'open' : 'closed',
-        comments: open && rand() > d.answered ? 0 : 1 + Math.floor(rand() * 4), labels: rand() < 0.1 ? [{ name: 'question' }] : [] }
+      const features = d.features ?? []
+      const labels: { name: string }[] = []
+      if (features.length) {
+        const pick = features[number % features.length]
+        if (d.mixed && number % 23 === 0 && features.length > 1) labels.push({ name: `feature:${features[0]}` }, { name: `feature:${features[1]}` })
+        else if (number % 7 !== 0) labels.push({ name: `feature:${pick}` })
+      }
+      if (rand() < 0.1) labels.push({ name: 'question' })
+      return { number, title: `Issue ${number}`, created_at: iso(daysAgo), state: open ? 'open' : 'closed',
+        comments: open && rand() > d.answered ? 0 : 1 + Math.floor(rand() * 4), labels }
     })
-    const meta = { name: d.name, description: d.theme, created_at: iso(d.years * 365.25), pushed_at: iso(d.quiet), archived: d.archived === true, topics: d.topics ?? [] }
+    const meta = {
+      name: d.name, description: d.theme, created_at: iso(d.years * 365.25), pushed_at: iso(d.quiet), archived: d.archived === true,
+      topics: d.topics ?? [], labels: (d.features ?? []).map((f) => ({ name: `feature:${f}` })),
+    }
+    // A merged pull request that closed an issue is the only connection drawn; one PR may close several.
+    const closed = issues.filter((i) => i.state === 'closed').map((i) => i.number)
+    const merged = pulls.filter((p) => p.merged_at && p.state !== 'open').slice(0, 6).map((p, i) => ({
+      number: p.number, title: p.title, merged_at: p.merged_at, url: `https://github.com/${repo}/pull/${p.number}`,
+      closes: i === 0 ? closed.slice(0, 2) : closed[i] ? [closed[i]] : [],
+    }))
     return readProject(repo, meta, pulls.map((p) => (p.state === 'open' ? { ...p, merged_at: null } : p)), issues, now,
-      d.prs > PAGE ? Math.ceil(d.prs / PAGE) : 0, d.issues)
+      d.prs > PAGE ? Math.ceil(d.prs / PAGE) : 0, d.issues, false, { labels: meta.labels, merged })
   })
   return {
     source: 'synthetic', projects, at: new Date(now).toISOString(),
     notices: [
       'These projects are fictional, made up so the tank opens without the network. Load projects or your account to read real ones from GitHub.',
-      'Bones are pull requests, scales are issues, and a repository is not a living thing: this mapping is a design choice, not a measurement of the code.',
+      'Features are bones, issues are small bones and the scale surface, and a merged pull request that closed an issue is a connection; a repository is not a living thing, so this mapping is a design choice, not a measurement of the code.',
     ],
   }
 }
