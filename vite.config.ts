@@ -137,6 +137,23 @@ function readBody(req: IncomingMessage, max: number): Promise<string> {
   })
 }
 
+// Merged pull requests and the issues GitHub itself reports them as closing. One GraphQL call, so the
+// relation is GitHub's, not something parsed from a description.
+const MERGED = `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){pullRequests(states:MERGED,last:100,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url mergedAt closingIssuesReferences(first:10){nodes{number}}}}}}`
+
+async function mergedWithIssues(name: string): Promise<unknown[]> {
+  const [owner, repo] = name.split('/')
+  const data = JSON.parse(await gh(['api', 'graphql', '-f', `query=${MERGED}`, '-f', `owner=${owner}`, '-f', `name=${repo}`]))
+  const nodes = data?.data?.repository?.pullRequests?.nodes
+  return (Array.isArray(nodes) ? nodes : []).map((n: Record<string, unknown>) => ({
+    number: n.number,
+    title: n.title,
+    url: n.url,
+    mergedAt: n.mergedAt,
+    closes: ((n.closingIssuesReferences as { nodes?: { number: number }[] } | undefined)?.nodes ?? []).map((c) => c.number),
+  }))
+}
+
 // A repository's records for the account tank. They go through `gh` so the 5,000-an-hour token
 // allowance is used, not the page's anonymous 60; nothing about the token reaches the reply.
 async function repoData(req: IncomingMessage, res: ServerResponse) {
@@ -145,14 +162,17 @@ async function repoData(req: IncomingMessage, res: ServerResponse) {
   if (!REPO.test(name)) return send(res, 400, { reason: 'bad request' })
   try {
     const query = encodeURIComponent(`repo:${name} is:issue`)
-    const [pulls, issues, search] = await Promise.all([
+    const [pulls, issues, search, labels, merged] = await Promise.all([
       ghPaged(`/repos/${name}/pulls?state=all&per_page=100&sort=created&direction=desc`),
       gh(['api', `/repos/${name}/issues?state=all&per_page=100&sort=created&direction=desc`]).then((t) => JSON.parse(t)),
       // Search has its own allowance; a refusal only makes the issue total a limit.
       gh(['api', `/search/issues?q=${query}&per_page=1`]).then((t) => JSON.parse(t)).catch(() => null),
+      // Feature labels are the only record of a "feature" GitHub has, so a missing list is an empty list.
+      gh(['api', `/repos/${name}/labels?per_page=100`]).then((t) => JSON.parse(t)).catch(() => []),
+      mergedWithIssues(name).catch(() => []),
     ])
     const total = search && typeof search.total_count === 'number' ? search.total_count : null
-    send(res, 200, { pulls, issues, total })
+    send(res, 200, { pulls, issues, total, labels, merged })
   } catch (error) {
     send(res, 502, { reason: (error as Error).message.slice(0, 300) })
   }

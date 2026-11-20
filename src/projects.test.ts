@@ -82,9 +82,9 @@ describe('counts', () => {
 
   it('counts open and question issues', () => {
     const issues: Issue[] = [
-      { number: 1, title: '', open: true, question: true, comments: 0, at: '', url: '' },
-      { number: 2, title: '', open: true, question: false, comments: 0, at: '', url: '' },
-      { number: 3, title: '', open: false, question: false, comments: 0, at: '', url: '' },
+      { number: 1, title: '', open: true, question: true, labels: [], comments: 0, at: '', url: '' },
+      { number: 2, title: '', open: true, question: false, labels: [], comments: 0, at: '', url: '' },
+      { number: 3, title: '', open: false, question: false, labels: [], comments: 0, at: '', url: '' },
     ]
     expect(countIssues(issues)).toEqual({ open: 2, question: 1 })
   })

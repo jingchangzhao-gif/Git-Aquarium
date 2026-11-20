@@ -1,51 +1,57 @@
 # Project fish: one repository, one body
 
 The Projects view is a second reading of the tank. A repository becomes one animal; its visible properties stand for
-things that were measured, never for guesses. This note fixes the decisions before the code that depends on them.
+things that were measured, never for guesses. This note fixes the anatomy decisions before the code that depends on
+them. Issue #39 replaced the old reading (ribs = pull requests, scales = share of issues closed).
 
 ## The decisions
 
 | # | Question | Decision | Why it matters |
 | --- | --- | --- | --- |
-| D1 | Replace the ecosystem or add a mode? | A **second mode**, with the ecosystem replay kept as `Ecosystem` | The new view is a snapshot of a repository; the old one is a deterministic replay. They cannot share a data contract |
-| D2 | Which pull requests count? | **All observed PRs**: merged, open, and closed; the latest 100 fetched, the total from the pagination header (rounded up to a whole page) | The history is what a skeleton should show. Open-only would make a dead project look boneless |
-| D3 | What is a "question"? | **All issues** as scales; **open issues** as missing scales; the `question` label gets a distinct colour | The label is optional and many repositories never use it; counting it alone would leave most bodies bare |
-| D4 | What counts as "no longer maintained"? | `archived` → a rock; `pushed_at` older than **365 days** → seaweed; older than **90 days** → a quiet fish | It is a product decision shown as fact, so the panel always prints the last push date beside it |
-| D5 | How many per tank? | **8 by default, 12 maximum**, editable | 8 × 3 requests = 24, so two loads fit inside GitHub's unauthenticated 60 an hour. One search request per project (ten a minute) gives the exact issue count |
-| D6 | How big is a body? | `size = 0.55 + 0.8 × log2(1 + prs) / 15`, capped at 32,767 PRs; the rib count also grows with the total, `4 × log2(1 + prs)`, at most 60 | Keeps a 10,000-PR project from filling the tank. The first cap, 256, made every established project the same size, so the scale runs to 32,767; the range was widened from 0.65–1.2 because a 300-PR and a 12,000-PR fish looked alike |
-| D7 | Can a rib be clicked? | **Not in v1.** The panel lists the five most recent PRs instead | Per-rib picking needs per-rib geometry ids; the panel gives the same information for less work |
+| D1 | Replace the ecosystem or add a mode? | A **second mode**, with the ecosystem replay kept as `Ecosystem` | The snapshot and the replay cannot share a data contract |
+| D2 | How much history is read? | The latest 100 pull requests and 100 issues per repository; the pull request total from the pagination header (rounded up to a whole page) | The history is what the body should show; a busy repository must not be described by one page |
+| D3 | What is a "feature"? | A `feature:<slug>` label. No feature label → one **General** bone. Two or more feature labels on one issue → **General**, marked as a conflict. Never inferred from folder names or README prose | GitHub has no feature record. A label is the only explicit one, and an invented feature would be a guess shown as fact |
+| D4 | When is a project no longer maintained? | `archived` → a rock; `pushed_at` older than **365 days** → seaweed; older than **180 days** → seaweed; older than **90 days** → a slowing fish; no push date → unknown; **finished** is a topic the owner sets, never inferred | The panel always prints the last push date beside the stage |
+| D5 | How many per tank? | **8 by default, 12 maximum**, editable | The account path costs five `gh` requests per project; a typed tank still uses unauthenticated requests |
+| D6 | How big is a body? | `size = 0.55 + 0.8 × log2(1 + prs) / 15`, capped at 32,767 pull requests. The pull request total sets length only; **features set the bones** | Keeps a 10,000-PR project from filling the tank without turning the skeleton into a busy score |
+| D7 | Can a bone be clicked? | **Not yet.** The panel lists features, open issues, resolved issues, and linked pull requests, each with its GitHub link. Every mesh carries a stable part id for #40's picking | #40 owns the zoom, rotate, and ray-picked scale; #39 delivers the identity to pick |
+| D8 | How much fits in the overview? | At most **6 feature bones** (the rest share one Other bone), at most **2 open-issue small bones per feature**; the panel lists everything past the limits | Busy projects have thousands of issues; the overview must stay readable, not silently hide them |
+| D9 | What does a finished fish look like? | One spine, its feature bones, one even scale colour, no open-issue bones or links; past issues and pull requests stay in the panel. A finished seaweed or rock keeps the form its owner chose | Finished means the work is declared done; the history is still readable |
 
 ## The mapping
 
 | Repository record | Body part |
 | --- | --- |
-| Description (or repository name) | Spine, the theme every rib hangs from |
-| Pull request count | Body length and height, and the number of ribs (4 per doubling, at most 60) |
-| One of the latest pull requests | One rib: bone-coloured when merged, amber when open, slate when closed unmerged |
-| Share of the latest issues closed | Share of the 24 scales a side left whole; the rest are dark gaps, gold for closed `question` issues |
+| Description (or repository name) | Spine, the theme every bone hangs from |
+| A `feature:<slug>` label | A big bone branching from the spine, in a stable slug order; `Other` when more than six features exist |
+| An issue carrying that label (or none / several) | A small bone on the feature's bone; none or several land on General |
+| The number of open issues on a feature | The tint and roughness of that feature's scale band; zero returns it to the base colour |
+| A merged pull request that GitHub reports as closing an issue | A thin link between that issue's small bone and the feature's big bone |
+| Pull request total | Body length and height only |
 | Pull requests and issues opened in the last 90 days | Swim speed |
 | No push for 90 days | Grey, dull skin |
-| Creation date, last push, 90-day activity, unanswered issues | The panel's health card only |
+| Creation date, last push, 90-day activity | The panel's update row only |
 
 ## Data boundaries that must stay visible
 
-- Each project costs three unauthenticated requests (repository, latest 100 pull requests, latest 100 issues).
-- `open_issues_count` counts issues **and** pull requests; it is never printed as an issue count.
-- The issues endpoint returns pull requests too; items carrying `pull_request` are filtered out.
-- The pull request total comes from the `Link: <...>; rel="last"` page number, so it is rounded up to a whole page and shown as "about"; without that header the list length is exact.
-- The issues list has no last page (it is paged by cursor), so the exact issue count comes from one search request per project. When search refuses, the total is shown as "up to": the highest issue number less the pull requests, which also counts discussions.
-- Every body is labelled with its repository's name, so a rock or seaweed cannot be mistaken for scenery.
+- The account tank reads five requests per project through the local GitHub CLI: repository lists, issues, search
+  count, labels, and one GraphQL call for merged pull requests with their **closing issue references**. The token
+  stays in the server process and never reaches the page, a URL, storage, or a log.
+- Closing references are GitHub's own (`closingIssuesReferences`), not parsed from a pull request description, so a
+  hand-closed issue has no link drawn.
+- Only the latest 100 issues and the latest 100 merged pull requests are related; older links are not guessed. A
+  pull request that closed nothing appears in the history list only.
+- Features come from labels named `feature:<slug>`; the page never writes, creates, or edits labels.
+- An issue with no feature label, two feature labels, or a feature past the six-bone limit is shown on General or
+  Other and counted in the panel. Nothing is duplicated onto two bones.
+- `open_issues_count` counts issues **and** pull requests; it is never printed as an issue count. The issues endpoint
+  also returns pull requests, which are filtered out.
 - The mapping from a repository to a living thing is a design choice, not a measurement of the code.
 
 ## Acceptance for the phases that follow
 
-- **P1** — data layer: lifecycle boundaries, PR/issue filtering, totals from the Link header, one failing repository
-  does not break the rest, rate-limit error path.
-- **P2** — one body, fake data: spine, ribs, and scales read as planned; 0, 1, and 100 ribs and scales stay
-  distinguishable at tank distance; at most five draw calls per body.
-- **P3** — one body, real data: size, rib count, and scale completeness match the panel; clicking shows the correct
-  title, dates, and links; unknown size is labelled, never guessed.
-- **P4** — a tank: eight repositories load in at most 24 requests; the readout matches the panels; bodies avoid
-  overlap; labels stay readable at 1440×1000 and at 430 px.
-- **P5** — abandoned states: an archived repository becomes a rock, a year-stale one becomes seaweed, a 90-day-stale
-  one stays a dim fish; all remain clickable with the correct last push date.
+- **#39 (this stage)** — feature parsing, General fallback, conflict handling, stable ids, closing-reference links,
+  overview limits, finished-fish simplification, and the panel lists all have unit coverage; a manual pass checks
+  that both flanks carry the same feature/issue/scale ids and that the links reach the correct bone.
+- **#40 (next)** — zoom, rotate, ray picking on scales, and mirrored selection: the part ids from #39 are the
+  contract, and clicking either flank must open the same issue or feature.
