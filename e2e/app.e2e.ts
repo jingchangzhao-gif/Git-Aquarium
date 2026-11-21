@@ -278,6 +278,10 @@ test.describe('zoom', () => {
     await expect(page.locator('body')).not.toHaveAttribute('data-zoom', /./)
 
     await zoomInto(page, 'demo/driftwood')
+    await page.locator('#prepos').focus()
+    await page.keyboard.press('Escape') // Escape in a text box belongs to the text box
+    await expect(page.locator('body')).toHaveAttribute('data-zoom', 'demo/driftwood')
+    await page.locator('#prepos').blur()
     await page.keyboard.press('Escape')
     await expect(page.locator('body')).not.toHaveAttribute('data-zoom', /./)
 
@@ -321,6 +325,23 @@ test.describe('zoom', () => {
     await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.45, { steps: 8 })
     await page.mouse.up()
     await expect(page.locator('body')).toHaveAttribute('data-zoom', 'demo/driftwood') // a drag is not a click
+  })
+
+  test('scrolling out stops while the fish is still in view', async ({ page }) => {
+    await projectsTab(page)
+    await zoomInto(page, 'demo/driftwood')
+    await arrived(page)
+    const box = (await page.locator('#scene').boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    for (let i = 0; i < 40; i++) await page.mouse.wheel(0, 400) // far more than anyone scrolls
+    await page.waitForTimeout(800) // the controls ease to a stop
+    let picked = false // without limits the camera leaves the water and every click here is open water
+    for (let i = 0; i < 40 && !picked; i++) {
+      await page.mouse.click(box.x + box.width * (0.38 + 0.12 * ((i * 37) % 100) / 100), box.y + box.height * (0.47 + 0.06 * ((i * 61) % 97) / 97))
+      await expect(page.locator('body')).toHaveAttribute('data-zoom', 'demo/driftwood')
+      picked = (await page.locator('#picked').count()) > 0
+    }
+    expect(picked).toBe(true)
   })
 
   test('bones are chosen from the list, by mouse or keyboard', async ({ page }) => {

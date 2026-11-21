@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import { buildProject } from './fish'
 import { demoProjects, type Project } from './projects'
-import { ease, fitDistance, pickScale, stillLife } from './zoom'
+import { FLOOR_Y, ease, fitDistance, orbitLimits, pickScale, stillLife } from './zoom'
 
 const NOW = Date.UTC(2026, 10, 20)
 const set = demoProjects(NOW)
@@ -55,6 +55,33 @@ describe('fitDistance', () => {
     expect(fitDistance(2.4, 0.94, 38, 1.6)).toBeCloseTo(2 * fitDistance(1.2, 0.47, 38, 1.6)) // twice the size, twice the distance
     expect(fitDistance(1.2, 0.47, 38, 0.5)).toBeGreaterThan(fitDistance(1.2, 0.47, 38, 1.6)) // a phone needs more room
     expect(fitDistance(0.3, 1.5, 38, 1.6)).toBeGreaterThan(fitDistance(0.3, 0.3, 38, 1.6)) // tall seaweed fits by its height
+  })
+})
+
+describe('orbitLimits', () => {
+  // Where the camera sits for a polar angle (from straight up) and a distance around a target at height y.
+  const cameraY = (y: number, polar: number, distance: number) => y + distance * Math.cos(polar)
+
+  it('keeps the camera outside the body and inside the water', () => {
+    const l = orbitLimits({ distance: 3, radius: 1.3, centerY: 2.2 })
+    expect(l.minDistance).toBeGreaterThan(1.3) // scrolling in stops before the camera is inside the fish
+    expect(l.maxDistance).toBeGreaterThanOrEqual(3 * 1.5) // room to step back
+    expect(l.maxDistance).toBeLessThanOrEqual(3 * 3) // but not out past the fog into the dark
+    expect(l.minDistance).toBeLessThan(3) // the arrival distance is allowed
+  })
+
+  it('never lets the camera below the sand, for a fish up high or a rock on the floor', () => {
+    for (const body of [{ distance: 3, radius: 1.3, centerY: 2.2 }, { distance: 2.5, radius: 0.8, centerY: 0.4 }, { distance: 2.2, radius: 0.6, centerY: 0.35 }]) {
+      const l = orbitLimits(body)
+      expect(l.minPolarAngle).toBeLessThan(l.maxPolarAngle)
+      for (const d of [l.minDistance, l.maxDistance]) {
+        expect(cameraY(body.centerY, l.maxPolarAngle, d)).toBeGreaterThanOrEqual(FLOOR_Y + 0.3 - 1e-9)
+      }
+      // The pose the camera arrives at (level with the body, a little above) is inside the limits, so nothing snaps.
+      expect(l.maxPolarAngle).toBeGreaterThan(Math.PI / 2 - 0.2)
+    }
+    const high = orbitLimits({ distance: 3, radius: 1, centerY: 50 })
+    expect(high.maxPolarAngle).toBeLessThanOrEqual(0.8 * Math.PI) // far above the sand it still stops short of straight below
   })
 })
 

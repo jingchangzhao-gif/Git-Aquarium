@@ -15,6 +15,24 @@ export function fitDistance(halfLength: number, halfHeight: number, fov: number,
   return 1.2 * Math.max(halfHeight / v, halfLength / (v * aspect))
 }
 
+export const FLOOR_Y = 0 // the top of the sand, with its ripples, in world units
+
+// How far the zoomed camera may be turned and moved: close, but outside the body; back, but not into the
+// dark past the fog; and never below the sand. The camera's height is centerY + distance * cos(polar), so
+// the lowest allowed angle is checked at both the nearest and the farthest distance.
+export function orbitLimits(body: { distance: number; radius: number; centerY: number }) {
+  const minDistance = Math.min(body.radius * 1.15, body.distance * 0.9)
+  const maxDistance = body.distance * 2.2
+  const clearance = FLOOR_Y + 0.3 - body.centerY
+  const lowest = (d: number) => Math.acos(Math.min(1, Math.max(-1, clearance / d)))
+  return {
+    minDistance,
+    maxDistance,
+    minPolarAngle: 0.08 * Math.PI, // not straight down from above, where the controls spin
+    maxPolarAngle: Math.min(0.8 * Math.PI, lowest(minDistance), lowest(maxDistance)),
+  }
+}
+
 export type Pick = { kind: 'scale'; featureId: string } | { kind: 'body' }
 
 // What a click on a zoomed project hits. Scales are the only parts on the outside; bones sit inside the

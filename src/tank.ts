@@ -5,7 +5,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { P, type Genome } from './sim'
 import { disposeProject, updateWave, waving } from './fish'
-import { ease, fitDistance, pickScale, type Pick } from './zoom'
+import { ease, fitDistance, orbitLimits, pickScale, type Pick } from './zoom'
 
 export const COLORS = ['#f08a2c', '#3f7fe0', '#f2cf3a', '#58b9a5', '#d9534f', '#8a63c9', '#9fc94f', '#e9a3b8'] // one per lineage
 const SHARED_FOOD = '#efe9da' // baseline food, which any lineage may eat
@@ -357,7 +357,7 @@ export function createTank(canvas: HTMLCanvasElement) {
   const controls = new OrbitControls(camera)
   controls.enableDamping = true
   controls.enablePan = false
-  type Pose = { pos: THREE.Vector3; target: THREE.Vector3 }
+  type Pose = { pos: THREE.Vector3; target: THREE.Vector3; radius?: number }
   let zoom: { id: string | null; from: Pose; to: Pose | null; start: number; ready: boolean } | null = null
   let chosen: string | null = null // the feature whose bone and scales are highlighted
   const FLIGHT = 0.6 // seconds
@@ -377,7 +377,7 @@ export function createTank(canvas: HTMLCanvasElement) {
     const side = new THREE.Vector3(0, 0, 1).applyQuaternion(group.quaternion)
     if (side.dot(camera.position.clone().sub(center)) < 0) side.negate() // the flank already facing us
     const distance = size.z / 2 + fitDistance(size.x / 2, size.y / 2, camera.fov, camera.aspect)
-    return { pos: center.clone().addScaledVector(side, distance).add(new THREE.Vector3(0, size.y * 0.15, 0)), target: center }
+    return { pos: center.clone().addScaledVector(side, distance).add(new THREE.Vector3(0, size.y * 0.15, 0)), target: center, radius: size.length() / 2 }
   }
   // Detaches the controls only if a finished flight attached them: leaving mid-flight has nothing to detach.
   const detach = () => { if (controls.domElement) controls.disconnect() }
@@ -545,7 +545,12 @@ export function createTank(canvas: HTMLCanvasElement) {
         }
         if (t >= 1 && !zoom.ready) {
           if (!zoom.id) leaveZoom()
-          else { zoom.ready = true; controls.connect(canvas); canvas.dataset.zoom = 'ready' } // arrived: it can be turned
+          else { // arrived: it can be turned, within limits that keep it in the water and above the sand
+            Object.assign(controls, orbitLimits({ distance: to.pos.distanceTo(to.target), radius: to.radius ?? 1, centerY: to.target.y }))
+            zoom.ready = true
+            controls.connect(canvas)
+            canvas.dataset.zoom = 'ready'
+          }
         }
         if (zoom?.ready) controls.update()
       }

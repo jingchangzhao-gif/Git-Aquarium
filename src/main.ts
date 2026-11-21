@@ -620,7 +620,8 @@ function projectLegend() {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && mode === 'projects' && view === 'repos' && picked) selectProject(null)
+  const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement
+  if (e.key === 'Escape' && !typing && mode === 'projects' && view === 'repos' && picked) selectProject(null)
 })
 
 // Picks one feature of the zoomed fish: its bone and scale band light up and the panel lists its open
