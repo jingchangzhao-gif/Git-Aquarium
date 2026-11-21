@@ -283,6 +283,7 @@ export function disposeProject(group: THREE.Group) {
       node.geometry.dispose()
       // Only the per-feature scale materials are owned by this group; the shared ones live for the page.
       if (node.material.userData?.own) node.material.dispose()
+      if (node.userData.base?.userData?.own) node.userData.base.dispose() // swapped out while highlighted
     }
   })
 }

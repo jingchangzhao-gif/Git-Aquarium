@@ -248,6 +248,119 @@ test.describe('projects', () => {
   })
 })
 
+test.describe('zoom', () => {
+  const projectsTab = async (page: Page) => {
+    await page.goto('./')
+    await page.locator('#tab-projects').click()
+    await expect(page.locator('#plegend li')).toHaveCount(8)
+  }
+  const zoomInto = async (page: Page, repo: string) => {
+    await page.locator(`#plegend button[data-repo="${repo}"]`).click()
+    await expect(page.locator('body')).toHaveAttribute('data-zoom', repo)
+  }
+  // Clicks a grid over the fish's middle (it fills the view side-on, nose to the left of the tail fin) until the
+  // panel shows a picked feature.
+  const clickBody = async (page: Page) => {
+    const box = (await page.locator('#scene').boundingBox())!
+    for (let i = 0; i < 120 && (await page.locator('#picked').count()) === 0; i++) {
+      await page.mouse.click(box.x + box.width * (0.3 + 0.25 * ((i * 37) % 100) / 100), box.y + box.height * (0.45 + 0.13 * ((i * 61) % 97) / 97))
+      await expect(page.locator('body')).toHaveAttribute('data-zoom', /./) // a click on the body never leaves the view
+    }
+  }
+
+  test('choosing a fish zooms in, and the back button, Escape, and open water each leave', async ({ page, github }) => {
+    await projectsTab(page)
+    await zoomInto(page, 'demo/driftwood')
+    await expect(page.locator('#zoom-back')).toBeVisible()
+    await page.locator('#zoom-back').click()
+    await expect(page.locator('body')).not.toHaveAttribute('data-zoom', /./)
+
+    await zoomInto(page, 'demo/driftwood')
+    await page.keyboard.press('Escape')
+    await expect(page.locator('body')).not.toHaveAttribute('data-zoom', /./)
+
+    await zoomInto(page, 'demo/driftwood')
+    await page.waitForTimeout(900) // let the camera arrive
+    const box = (await page.locator('#scene').boundingBox())!
+    await page.mouse.click(box.x + 6, box.y + 6) // the corner is open water once the fish fills the middle
+    await expect(page.locator('body')).not.toHaveAttribute('data-zoom', /./)
+    await expect(page.locator('#project .hint')).toBeVisible()
+    expect(github).toEqual([])
+  })
+
+  test('leaving or switching before the camera arrives is safe', async ({ page }) => {
+    await projectsTab(page)
+    for (let i = 0; i < 3; i++) { // mid-flight, every way out; the errors fixture fails on any page exception
+      await zoomInto(page, 'demo/driftwood')
+      await page.keyboard.press('Escape')
+      await zoomInto(page, 'demo/garden')
+      await zoomInto(page, 'demo/driftwood') // straight to another project
+      await page.locator('#tab-eco').click()
+      await page.locator('#tab-projects').click()
+      await expect(page.locator('body')).not.toHaveAttribute('data-zoom', /./)
+    }
+    await page.waitForTimeout(800) // let any flight that was cut short finish
+  })
+
+  test('a scale on the body opens its feature, and dragging rotates without leaving', async ({ page }) => {
+    await projectsTab(page)
+    await zoomInto(page, 'demo/driftwood')
+    await page.waitForTimeout(900)
+    await clickBody(page)
+    const picked = page.locator('#picked')
+    await expect(picked).toContainText(/open issue/)
+    const name = (await page.locator('#project button.bone[aria-pressed="true"]').textContent())!
+    await expect(picked).toContainText(name.split(' · ')[0]) // the panel and the highlighted bone agree
+
+    const box = (await page.locator('#scene').boundingBox())!
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.45, { steps: 8 })
+    await page.mouse.up()
+    await expect(page.locator('body')).toHaveAttribute('data-zoom', 'demo/driftwood') // a drag is not a click
+  })
+
+  test('bones are chosen from the list, by mouse or keyboard', async ({ page }) => {
+    await projectsTab(page)
+    await zoomInto(page, 'demo/driftwood')
+    const bones = page.locator('#project button.bone')
+    expect(await bones.count()).toBeGreaterThan(1)
+    await bones.nth(1).focus()
+    await page.keyboard.press('Enter')
+    await expect(bones.nth(1)).toHaveAttribute('aria-pressed', 'true')
+    await expect(bones.nth(1)).toBeFocused() // the panel is redrawn, but keyboard focus stays on the bone
+    await expect(bones.nth(0)).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.locator('#picked')).toContainText((await bones.nth(1).locator('span').textContent())!)
+    await bones.nth(1).click() // choosing it again lets it go
+    await expect(page.locator('#picked')).toHaveCount(0)
+    await expect(page.locator('body')).toHaveAttribute('data-zoom', 'demo/driftwood')
+  })
+
+  test('seaweed and rock zoom in too and show only features, upkeep, and download', async ({ page }) => {
+    await projectsTab(page)
+    for (const form of ['seaweed', 'rock']) {
+      const repo = await page.locator('#plegend button').filter({ has: page.locator('u', { hasText: new RegExp(`^${form}$`) }) }).first().getAttribute('data-repo')
+      expect(repo).toBeTruthy()
+      await zoomInto(page, repo!)
+      const card = page.locator('#project')
+      for (const row of ['Features', 'Last maintained', 'Download']) await expect(card).toContainText(row)
+      for (const row of ['Pull requests', 'Issues', 'commit']) await expect(card.locator('dt', { hasText: row })).toHaveCount(0)
+      await expect(card.locator('#show-pulls')).toHaveCount(0)
+      await expect(card.locator('button.bone')).toHaveCount(0)
+      await page.keyboard.press('Escape')
+    }
+  })
+
+  test('the zoomed view fits a phone without sideways scroll', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await projectsTab(page)
+    await zoomInto(page, 'demo/driftwood')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+    await page.locator('#zoom-back').scrollIntoViewIfNeeded()
+    await expect(page.locator('#zoom-back')).toBeInViewport()
+  })
+})
+
 test.describe('local endpoints', () => {
   // The repository name is invalid on purpose: no request here can reach the GitHub CLI, whatever the guard does.
   const body = JSON.stringify({ repo: 'not a repository', finished: true, form: 'rock' })

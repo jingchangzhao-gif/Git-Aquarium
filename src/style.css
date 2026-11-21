@@ -396,6 +396,23 @@ body[data-view='repos'] #pull-panel { display: none !important; }
 #project .recent small, #pull .recent small { color: var(--dim); }
 #project .recent a, #pull .recent a { overflow-wrap: anywhere; }
 #show-pulls { margin-top: 14px; }
+#zoom-back { margin-bottom: 10px; padding: 4px 12px; }
+#project .bones button {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#project .bones button:hover { border-color: var(--line); }
+#project .bones button:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+#project .bones button[aria-pressed='true'] { border-color: #7fe3ff; background: rgba(127, 227, 255, 0.1); }
+#picked { margin-top: 14px; padding: 10px 12px; border: 1px solid rgba(127, 227, 255, 0.45); border-radius: 10px; }
+#project dd code { font: 400 12px var(--mono); overflow-wrap: anywhere; }
 #project .finished { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; font-size: 13.5px; }
 #project .finished h3 { width: 100%; }
 #project .finished label { display: inline-flex; align-items: center; gap: 6px; }

@@ -8,6 +8,7 @@ import { demo } from './demo'
 import { explain, key, parseAnswer, repoAnswer, repoQuestion, summarize, unknownEvidence, type Answer, type Claim, type Context, type Sample } from './explain'
 import { P, RULES, TRAITS, hashState, lifespanTicks, maxEnergy, type EventKind, type Organism, type State, type Trait } from './sim'
 import { COLORS, createTank, silhouette, type ProjectDraw, type Swimmer } from './tank'
+import { stillLife } from './zoom'
 import { DEFAULT_REPOS, countIssues, countPulls, demoProjects, fetchProjects, healthOf, type Form, type Project, type ProjectSet } from './projects'
 import { fetchAccountProjects, loadAccount, saveFinished, upkeepWith, type Account } from './account'
 import { readPulls, STALE_DAYS, type Check, type PullSet, type PullSummary } from './pulls'
@@ -72,7 +73,8 @@ let drawn: Swimmer[] = [] // the living fish as last drawn, for picking with a c
 let mode: 'ecosystem' | 'projects' = 'ecosystem'
 let projects: ProjectSet | null = null
 let agents: Agent[] = []
-let picked: Agent | null = null
+let picked: Agent | null = null // also the project the camera is zoomed into
+let chosenFeature: string | null = null // the feature picked on the zoomed body or from its bone list
 let projectRev = 0 // bumped when the data changes, so the tank rebuilds its meshes once
 let view: 'repos' | 'pulls' = 'repos' // the projects mode drills into one repository's open pull requests
 let account: Account | null = null // the local GitHub CLI account, when its tank is loaded
@@ -398,10 +400,19 @@ function vitals() {
   $('#o-energy').textContent = `${Math.max(0, o.energy).toFixed(0)} of ${maxEnergy(o.genome).toFixed(0)}`
 }
 
+let pressed = { x: 0, y: 0 } // where the pointer went down: a drag that rotates the zoomed view is not a click
+scene.addEventListener('pointerdown', (e) => (pressed = { x: e.clientX, y: e.clientY }))
 scene.addEventListener('click', (e) => {
   if (!tank) return
   const px = (e.offsetX / scene.clientWidth) * W
   const py = (e.offsetY / scene.clientHeight) * H
+  if (mode === 'projects' && view === 'repos' && picked) {
+    if (Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) > 5) return
+    const hit = tank.pick(px, py)
+    if (!hit) return selectProject(null) // open water leaves the zoomed view
+    if (hit.kind === 'scale') chooseFeature(hit.featureId)
+    return
+  }
   if (mode === 'projects') { // a project body is larger than a fish, so its hit area is wider
     if (view === 'pulls') {
       let best: (typeof prSpots)[number] | undefined
@@ -608,8 +619,30 @@ function projectLegend() {
   }))
 }
 
-function selectProject(a: Agent | null) {
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && mode === 'projects' && view === 'repos' && picked) selectProject(null)
+})
+
+// Picks one feature of the zoomed fish: its bone and scale band light up and the panel lists its open
+// issues. Choosing the same feature again lets it go.
+function chooseFeature(id: string | null) {
+  chosenFeature = chosenFeature === id ? null : id
+  tank?.highlight(chosenFeature)
+  const wasOnBone = document.activeElement instanceof HTMLElement && document.activeElement.classList.contains('bone')
+  if (picked) selectProject(picked, true)
+  // The panel is redrawn, so put keyboard focus back on the bone that was used.
+  if (wasOnBone && id) document.querySelector<HTMLButtonElement>(`#project button.bone[data-feature="${CSS.escape(id)}"]`)?.focus()
+}
+
+function selectProject(a: Agent | null, keepFeature = false) {
+  if (!keepFeature || a !== picked) {
+    chosenFeature = null
+    tank?.highlight(null)
+  }
   picked = a
+  tank?.zoomTo(a && view === 'repos' ? a.id : null)
+  if (a && view === 'repos') document.body.dataset.zoom = a.id
+  else delete document.body.dataset.zoom
   for (const button of $('#plegend').querySelectorAll<HTMLButtonElement>('button')) {
     button.setAttribute('aria-pressed', String(button.dataset.repo === a?.id))
   }
@@ -655,12 +688,37 @@ function selectProject(a: Agent | null) {
     `${anatomy.links.length} merged pull request${anatomy.links.length === 1 ? '' : 's'} linked to a closed issue`)
   row('Pull requests', `${count(p.prs, 'about')} in all · ${pulls.open} open (latest ${p.prs.recent.length})`)
   row('Issues', `${count(p.issues, 'up to')} in all · ${issues.open} open · ${resolved.length} resolved of the latest ${p.issues.recent.length}`)
-  const featureList = el('ol', '', 'recent')
+  // Bones sit inside the body, so they are chosen here, by mouse or keyboard; scales can also be clicked on it.
+  const featureList = el('ol', '', 'recent bones')
   for (const feature of anatomy.features) {
     const open = openIssues.filter((i) => i.featureId === feature.id).length
     const li = el('li')
-    li.append(el('span', feature.name), el('small', ` · ${open} open · ${feature.label || 'no feature label'}`))
+    const bone = el('button', '', 'bone')
+    bone.type = 'button'
+    bone.dataset.feature = feature.id
+    bone.setAttribute('aria-pressed', String(chosenFeature === feature.id))
+    bone.append(el('span', feature.name), el('small', ` · ${open} open · ${feature.label || 'no feature label'}`))
+    bone.addEventListener('click', () => chooseFeature(feature.id))
+    li.append(bone)
     featureList.append(li)
+  }
+  const chosen = anatomy.features.find((f) => f.id === chosenFeature)
+  const pickedBox = el('section')
+  if (chosen) {
+    const mine = openIssues.filter((i) => i.featureId === chosen.id)
+    pickedBox.id = 'picked'
+    const list = el('ol', '', 'recent')
+    for (const issue of mine.slice(0, 8)) {
+      const li = el('li')
+      const label = issue.url ? document.createElement('a') : document.createElement('span')
+      if (issue.url) Object.assign(label as HTMLAnchorElement, { href: issue.url, target: '_blank', rel: 'noopener' })
+      label.textContent = `#${issue.number} ${issue.title}`
+      li.append(label)
+      list.append(li)
+    }
+    pickedBox.append(el('h3', `${chosen.name} · ${mine.length} open issue${mine.length === 1 ? '' : 's'}`),
+      ...(mine.length ? [list] : [el('p', 'No open issues on this feature: its scales keep the base colour.', 'hint')]),
+      ...(mine.length > 8 ? [el('p', `${mine.length - 8} more are listed under Open issues below.`, 'hint')] : []))
   }
   const issueList = el('ol', '', 'recent')
   for (const issue of openIssues.slice(0, 5)) {
@@ -749,8 +807,14 @@ function selectProject(a: Agent | null) {
     shape.append(document.createTextNode('form '), form)
     finishedBox.append(done, shape, save)
   }
+  const back = el('button', 'Back to the tank', 'ghost')
+  back.type = 'button'
+  back.id = 'zoom-back'
+  back.title = 'Leave this project (Escape, or click open water)'
+  back.addEventListener('click', () => selectProject(null))
+  if (a.kind !== 'fish') return box.replaceChildren(back, who, stillFacts(p), finishedBox)
   // A fictional project has no pull requests on GitHub to open.
-  box.replaceChildren(who, facts,
+  box.replaceChildren(back, who, facts, ...(chosen ? [pickedBox] : []),
     el('h3', 'Feature bones'), featureList,
     ...(openIssues.length ? [el('h3', 'Open issues'), issueList] : []),
     ...(resolved.length ? [el('h3', 'Resolved issues'), historyList] : []),
@@ -823,6 +887,24 @@ function selectPull(p: PullSummary | null) {
   box.replaceChildren(who, facts)
 }
 
+// Seaweed and rocks are at rest: what they hold, when they were last kept, and how to take a copy.
+function stillFacts(p: Project) {
+  const facts = stillLife(p, Date.now())
+  const dl = el('dl')
+  const row = (label: string, ...value: (string | Node)[]) => {
+    const dd = el('dd')
+    dd.append(...value)
+    dl.append(el('dt', label), dd)
+  }
+  const link = (href: string, text: string) => Object.assign(el('a', text), { href, target: '_blank', rel: 'noopener' })
+  row('Theme', p.theme)
+  row('Features', facts.features.join(', ') || 'none labelled')
+  row('Last maintained', facts.maintained)
+  if (facts.clone && facts.zip && facts.releases) row('Download', el('code', facts.clone), el('br'), link(facts.zip, 'ZIP of the default branch'), ' · ', link(facts.releases, 'releases'))
+  else row('Download', 'none: this project has no github.com address')
+  return dl
+}
+
 async function openPulls(project: Project) {
   const button = $<HTMLButtonElement>('#show-pulls')
   button.disabled = true
@@ -834,6 +916,8 @@ async function openPulls(project: Project) {
     pickedPr = null
     view = 'pulls'
     document.body.dataset.view = view
+    delete document.body.dataset.zoom // the pull request view is a tank of its own; Back returns to the zoom
+    tank?.zoomTo(null)
     projectRev++
     pullReadout()
     pullLegend()
@@ -911,6 +995,7 @@ function showMode(next: 'ecosystem' | 'projects') {
   document.body.dataset.mode = next
   $('#tab-eco').setAttribute('aria-pressed', String(next === 'ecosystem'))
   $('#tab-projects').setAttribute('aria-pressed', String(next === 'projects'))
+  if (next !== 'projects' && picked) selectProject(null) // the ecosystem camera does not zoom
   if (next === 'projects' && !projects) useProjects(demoProjects()) // opens offline; real repositories load on request
 }
 
@@ -954,7 +1039,7 @@ function paint(now: number) {
   if (!tank) return
   if (mode === 'projects') {
     anim += dt // this view has no replay to pause, so it always moves
-    if (view === 'repos' && projects) drift(agents, dt, anim)
+    if (view === 'repos' && projects) drift(picked ? agents.filter((a) => a !== picked) : agents, dt, anim) // the zoomed one holds still
     const items: ProjectDraw[] = view === 'pulls'
       ? prSpots.map((spot) => ({
         id: `#${spot.pull.number}`,
@@ -981,8 +1066,9 @@ function paint(now: number) {
       }
       return
     }
-    // Every body carries its repository's name, or a rock could not be told from the scenery.
-    for (const a of agents) {
+    // Every body carries its repository's name, or a rock could not be told from the scenery. A zoomed
+    // project is shown on its own and named in the panel, so no label follows it round as it turns.
+    for (const a of picked ? [] : agents) {
       const [x, y] = tank.projectScene(a.x, a.y + (a.still ? 0.95 : -0.5 * a.project.size), a.z)
       const width = ctx.measureText(a.project.name).width + 14
       ctx.fillStyle = a === picked ? '#fff' : 'rgba(6, 22, 34, 0.72)'

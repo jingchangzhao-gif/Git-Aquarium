@@ -2,8 +2,10 @@
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { P, type Genome } from './sim'
-import { disposeProject, updateWave } from './fish'
+import { disposeProject, updateWave, waving } from './fish'
+import { ease, fitDistance, pickScale, type Pick } from './zoom'
 
 export const COLORS = ['#f08a2c', '#3f7fe0', '#f2cf3a', '#58b9a5', '#d9534f', '#8a63c9', '#9fc94f', '#e9a3b8'] // one per lineage
 const SHARED_FOOD = '#efe9da' // baseline food, which any lineage may eat
@@ -349,6 +351,52 @@ export function createTank(canvas: HTMLCanvasElement) {
   const pointer = new THREE.Vector2()
   const look = new THREE.Vector2() // eased pointer, so the view drifts rather than snaps
   canvas.addEventListener('pointermove', (e) => pointer.set(e.offsetX / canvas.clientWidth - 0.5, 0.5 - e.offsetY / canvas.clientHeight))
+
+  // Zooming into one project: the camera flies from where it is to the project's side, then the controls
+  // rotate around it. They are attached only while zoomed, so the page still scrolls over the tank on a phone.
+  const controls = new OrbitControls(camera)
+  controls.enableDamping = true
+  controls.enablePan = false
+  type Pose = { pos: THREE.Vector3; target: THREE.Vector3 }
+  let zoom: { id: string | null; from: Pose; to: Pose | null; start: number; ready: boolean } | null = null
+  let chosen: string | null = null // the feature whose bone and scales are highlighted
+  const FLIGHT = 0.6 // seconds
+  const still = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  const glow = waving(new THREE.MeshStandardMaterial({ color: '#7fe3ff', emissive: '#1fa8d8', emissiveIntensity: 0.7, roughness: 0.4, side: THREE.DoubleSide }))
+  const overviewPose = (): Pose => ({ pos: new THREE.Vector3(look.x * 0.9, 2.9 + look.y * 0.35, 8.8), target: new THREE.Vector3(0, 2.0, -1.8) })
+  const currentPose = (): Pose => ({ pos: camera.position.clone(), target: controls.target.clone() })
+  function sidePose(group: THREE.Object3D): Pose {
+    const box = new THREE.Box3() // in the project's own frame: nose to tail along x, flank facing z
+    for (const node of group.children) {
+      if (!(node instanceof THREE.Mesh)) continue
+      if (!node.geometry.boundingBox) node.geometry.computeBoundingBox()
+      box.union(node.geometry.boundingBox!.clone().applyMatrix4(node.matrix))
+    }
+    const size = box.getSize(new THREE.Vector3())
+    const center = group.localToWorld(box.getCenter(new THREE.Vector3()))
+    const side = new THREE.Vector3(0, 0, 1).applyQuaternion(group.quaternion)
+    if (side.dot(camera.position.clone().sub(center)) < 0) side.negate() // the flank already facing us
+    const distance = size.z / 2 + fitDistance(size.x / 2, size.y / 2, camera.fov, camera.aspect)
+    return { pos: center.clone().addScaledVector(side, distance).add(new THREE.Vector3(0, size.y * 0.15, 0)), target: center }
+  }
+  // Detaches the controls only if a finished flight attached them: leaving mid-flight has nothing to detach.
+  const detach = () => { if (controls.domElement) controls.disconnect() }
+  function leaveZoom() {
+    detach()
+    zoom = null
+    chosen = null
+  }
+  // Swaps the highlight material onto the chosen feature's bone and scales, and back off everything else.
+  function highlight(group: THREE.Object3D) {
+    for (const node of group.children) {
+      if (!(node instanceof THREE.Mesh)) continue
+      const part = node.userData.part
+      if (!part || (part.kind !== 'feature' && part.kind !== 'scale')) continue
+      const on = chosen !== null && (part.kind === 'feature' ? part.id : part.featureId) === chosen
+      if (on && node.material !== glow) { node.userData.base = node.material; node.material = glow }
+      if (!on && node.material === glow) node.material = node.userData.base
+    }
+  }
   canvas.addEventListener('pointerleave', () => pointer.set(0, 0))
 
   const place = (v: THREE.Vector3, x: number, y: number, z: number) => v.set((x - P.width / 2) * SCALE, y * SCALE, -z * SCALE)
@@ -428,6 +476,7 @@ export function createTank(canvas: HTMLCanvasElement) {
       bubbles.instanceMatrix.needsUpdate = true
       snow.position.set(Math.sin(time * 0.05) * 0.4, Math.sin(time * 0.07) * 0.2, 0)
 
+      if (zoom) leaveZoom()
       look.lerp(pointer, 0.04)
       camera.position.set(Math.sin(time * 0.12) * 0.45 + look.x * 1.2, 1.7 + Math.sin(time * 0.085) * 0.1 + look.y * 0.5, 7.6)
       camera.lookAt(0, 2.5, -1.3)
@@ -470,14 +519,54 @@ export function createTank(canvas: HTMLCanvasElement) {
           projectCache.set(item.id, entry)
         }
         entry.group.position.set(item.x, item.y, item.z)
+        entry.group.visible = !zoom?.id || zoom.id === item.id // a zoomed project is shown on its own
         // The meshes face +x; `yaw` is measured toward +z, so the sign flips.
         entry.group.rotation.set(0, -item.yaw, Math.sin(time * 0.8 + item.x) * 0.04)
       }
 
       look.lerp(pointer, 0.04)
-      camera.position.set(look.x * 0.9, 2.9 + look.y * 0.35, 8.8)
-      camera.lookAt(0, 2.0, -1.8)
+      const focus = zoom?.id ? projectCache.get(zoom.id)?.group : undefined
+      if (zoom && zoom.id && !focus) leaveZoom() // the project left the tank
+      for (const entry of projectCache.values()) highlight(entry.group) // un-highlights a project that lost focus
+      if (!zoom) {
+        const o = overviewPose()
+        camera.position.copy(o.pos)
+        controls.target.copy(o.target)
+        camera.lookAt(o.target)
+      } else {
+        if (focus && !zoom.to) { focus.updateMatrixWorld(true); zoom.to = sidePose(focus) }
+        const to = zoom.to ?? overviewPose() // flying back out aims at the overview, which keeps moving
+        const t = still() ? 1 : ease((performance.now() / 1000 - zoom.start) / FLIGHT)
+        if (!zoom.ready) {
+          camera.position.lerpVectors(zoom.from.pos, to.pos, t)
+          controls.target.lerpVectors(zoom.from.target, to.target, t)
+          camera.lookAt(controls.target)
+        }
+        if (t >= 1 && !zoom.ready) {
+          if (!zoom.id) leaveZoom()
+          else { zoom.ready = true; controls.connect(canvas) }
+        }
+        if (zoom?.ready) controls.update()
+      }
       renderer.render(scene, camera)
+    },
+    // Flies to one project (by its id), or back out to the whole tank with null.
+    zoomTo(id: string | null) {
+      if ((zoom?.id ?? null) === id) return
+      detach()
+      if (!zoom && !id) return
+      zoom = { id, from: currentPose(), to: null, start: performance.now() / 1000, ready: false }
+      chosen = null
+    },
+    // Highlights one feature's bone and scale band on the zoomed project; null clears it.
+    highlight(featureId: string | null) { chosen = featureId },
+    // What a click at this overlay point hits on the zoomed project: a scale, the body, or nothing.
+    pick(px: number, py: number): Pick | null {
+      const group = zoom?.id ? projectCache.get(zoom.id)?.group : undefined
+      if (!group) return null
+      const ray = new THREE.Raycaster()
+      ray.setFromCamera(new THREE.Vector2((px / P.width) * 2 - 1, 1 - (py / P.height) * 2), camera)
+      return pickScale(group, ray)
     },
     // Where a project fish's body centre lands on the overlay canvas.
     projectScene(x: number, y: number, z: number): [number, number] {
