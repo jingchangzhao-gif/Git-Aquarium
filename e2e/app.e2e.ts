@@ -258,6 +258,8 @@ test.describe('zoom', () => {
     await page.locator(`#plegend button[data-repo="${repo}"]`).click()
     await expect(page.locator('body')).toHaveAttribute('data-zoom', repo)
   }
+  // The camera has finished its flight; on a slow software renderer that can take a while.
+  const arrived = (page: Page) => expect(page.locator('#scene')).toHaveAttribute('data-zoom', 'ready', SLOW_START)
   // Clicks a grid over the fish's middle (it fills the view side-on, nose to the left of the tail fin) until the
   // panel shows a picked feature.
   const clickBody = async (page: Page) => {
@@ -280,10 +282,11 @@ test.describe('zoom', () => {
     await expect(page.locator('body')).not.toHaveAttribute('data-zoom', /./)
 
     await zoomInto(page, 'demo/driftwood')
-    await page.waitForTimeout(900) // let the camera arrive
+    await arrived(page)
     const box = (await page.locator('#scene').boundingBox())!
     await page.mouse.click(box.x + 6, box.y + 6) // the corner is open water once the fish fills the middle
     await expect(page.locator('body')).not.toHaveAttribute('data-zoom', /./)
+    await expect(page.locator('#scene')).not.toHaveAttribute('data-zoom', /./) // the camera is no longer parked
     await expect(page.locator('#project .hint')).toBeVisible()
     expect(github).toEqual([])
   })
@@ -305,7 +308,7 @@ test.describe('zoom', () => {
   test('a scale on the body opens its feature, and dragging rotates without leaving', async ({ page }) => {
     await projectsTab(page)
     await zoomInto(page, 'demo/driftwood')
-    await page.waitForTimeout(900)
+    await arrived(page)
     await clickBody(page)
     const picked = page.locator('#picked')
     await expect(picked).toContainText(/open issue/)

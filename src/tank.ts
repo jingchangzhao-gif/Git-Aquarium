@@ -383,6 +383,7 @@ export function createTank(canvas: HTMLCanvasElement) {
   const detach = () => { if (controls.domElement) controls.disconnect() }
   function leaveZoom() {
     detach()
+    delete canvas.dataset.zoom
     zoom = null
     chosen = null
   }
@@ -544,7 +545,7 @@ export function createTank(canvas: HTMLCanvasElement) {
         }
         if (t >= 1 && !zoom.ready) {
           if (!zoom.id) leaveZoom()
-          else { zoom.ready = true; controls.connect(canvas) }
+          else { zoom.ready = true; controls.connect(canvas); canvas.dataset.zoom = 'ready' } // arrived: it can be turned
         }
         if (zoom?.ready) controls.update()
       }
@@ -554,6 +555,7 @@ export function createTank(canvas: HTMLCanvasElement) {
     zoomTo(id: string | null) {
       if ((zoom?.id ?? null) === id) return
       detach()
+      delete canvas.dataset.zoom
       if (!zoom && !id) return
       zoom = { id, from: currentPose(), to: null, start: performance.now() / 1000, ready: false }
       chosen = null
