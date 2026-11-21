@@ -61,10 +61,13 @@ test.describe('ecosystem', () => {
     await page.goto('./')
     await expect.poll(() => tick(page), SLOW_START).toBeGreaterThan(10)
     await page.locator('#pause').click()
-    const held = await tick(page)
-    await page.waitForTimeout(700)
-    expect(await tick(page)).toBe(held)
     await expect(page.locator('#tick')).toContainText(/state [0-9a-f]{8}/)
+    // A tick the worker sent just before it heard "pause" may still land, and is shown with its own hash;
+    // once that has arrived the replay holds.
+    await page.waitForTimeout(1000)
+    const held = await tick(page)
+    await page.waitForTimeout(1000)
+    expect(await tick(page)).toBe(held)
   })
 
   test('clicking a fish follows it in the Organism panel', async ({ page }) => {
@@ -333,7 +336,9 @@ test.describe('zoom', () => {
     await arrived(page)
     const box = (await page.locator('#scene').boundingBox())!
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-    for (let i = 0; i < 40; i++) await page.mouse.wheel(0, 400) // far more than anyone scrolls
+    // OrbitControls zooms by 0.95^(delta/100), so three big turns are 180 notches out: far more than anyone scrolls.
+    // (Each wheel waits for a frame, which a software renderer on CI draws slowly, so few and large.)
+    for (let i = 0; i < 3; i++) await page.mouse.wheel(0, 6000)
     await page.waitForTimeout(800) // the controls ease to a stop
     let picked = false // without limits the camera leaves the water and every click here is open water
     for (let i = 0; i < 40 && !picked; i++) {
