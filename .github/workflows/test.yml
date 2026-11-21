@@ -4,7 +4,7 @@ name: Test
 # the browser tests serve or block it themselves.
 on:
   push:
-    branches: [main]
+    branches: [main, 'ci/**'] # ci/ branches are where a change proves itself before main is moved to it
   pull_request:
 
 permissions:

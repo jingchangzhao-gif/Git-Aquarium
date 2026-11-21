@@ -2,6 +2,8 @@ name: Publish the hosted demo
 
 # Builds the static bundle and deploys it to GitHub Pages. The owner enables Pages once:
 # Settings -> Pages -> Source: GitHub Actions. Nothing here needs a server or a key.
+# Until Pages is enabled the build and deploy are skipped with a notice, so a push is not marked failed
+# for a setting only an admin can change; any other error from the check still fails the run.
 on:
   push:
     branches: [main]
@@ -17,7 +19,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.pages.outputs.enabled }}
+    steps:
+      - id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" --silent 2> error.txt; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif grep -q "HTTP 404" error.txt; then
+            echo "::notice title=Hosted demo not published::GitHub Pages is not enabled for this repository. An admin turns it on once: Settings -> Pages -> Source: GitHub Actions. The next push to main then publishes."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            cat error.txt
+            exit 1
+          fi
+
   build:
+    needs: check
+    if: needs.check.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
