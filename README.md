@@ -6,6 +6,8 @@
 
 *The built-in demo as a timelapse: 30 days of a fictional repository replayed as a living aquarium. It takes about three minutes at normal speed.*
 
+**[Try it in the browser →](https://jingchangzhao-gif.github.io/Git-Aquarium/)** No install. The demo runs offline, and a shared link like [`?repo=jingchangzhao-gif/Git-Aquarium&seed=3`](https://jingchangzhao-gif.github.io/Git-Aquarium/?repo=jingchangzhao-gif/Git-Aquarium&seed=3) imports a public repository.
+
 Git Aquarium is an artificial-life simulator that turns GitHub development activity into environmental changes inside a digital aquarium. Virtual organisms forage, consume energy, reproduce, inherit traits, mutate, and die, while repository events influence the resources and conditions around them.
 
 The goal is to make software history visible, explorable, and explainable through **artificial life, reproducible replay, and evidence-based interpretation**.
@@ -50,7 +52,7 @@ The population figures are simulated measurements from one seeded run. They are 
 
 ## Projects: one repository, one fish
 
-![The Projects demo tank: six fictional repositories as fish, seaweed, and a rock. The selected fish, driftwood, has dark gaps among its scales, and its health card reads 6.0 years old, last update 4 days ago, about 3,100 pull requests with 49% of finished ones merged, and scales 46% whole with 24 issues unanswered for over 30 days.](docs/projects.png)
+![The Projects demo tank zoomed in on driftwood, seen side-on with every other project hidden. A click on a pale scale band picked its API feature, whose 52 open issues are listed in the card under the project's theme, age, upkeep, features, pull requests, and issues; the API bone is highlighted in the Feature bones list beside General.](docs/projects.png)
 
 Projects is a second reading of the tank, switched by the `Projects` tab beside the title. It opens on a demo tank of fictional projects, one for each kind of upkeep, so it needs no network; **Load projects** reads real repositories from GitHub, and **My account** fills the tank from the GitHub CLI account signed in on this machine. Each repository becomes one body: a fish while it is maintained, a slowing fish after 90 days without a push, a clump of seaweed once that reaches half a year, and a rock after a year or an archive. Every body carries its repository's name.
 
@@ -73,6 +75,8 @@ Click a body to read its card:
 | Issues | In all, open, and how many of the latest hundred resolved |
 
 The panel also lists the feature bones with their open counts and label, the five newest open issues with their feature, the resolved issues (marked "closed by #N" when a link exists, otherwise "no linked pull request"), the pull requests that closed issues, any conflicts or unclassified fallbacks, and the five most recent pull requests with links.
+
+![Zooming into the demo tank: the camera flies from the whole tank to driftwood, a click on its pale scale band picks the API feature, a drag turns the fish, choosing the General bone from the list lights its orange scales instead, and Back to the tank flies out again.](docs/zoom.gif)
 
 **Zoom in.** Clicking a body (or its name in the list) flies the camera to it and shows it on its own; drag to turn it and scroll to move closer. Click a scale band to list that feature's open issues; the band and its bone light up in cyan, and the fish is symmetric, so either side opens the same feature. Bones sit inside the body, so they are chosen from the **Feature bones** list, which also works by keyboard. Seaweed and rocks zoom in too, and their panel shows only the features, when the project was last maintained, and how to download it (clone command, ZIP, releases). **Back to the tank**, Escape, or a click on open water returns to the whole tank.
 
