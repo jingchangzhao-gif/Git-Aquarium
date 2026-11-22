@@ -178,6 +178,7 @@ function use(d: Dataset) {
     line.style.stroke = COLORS[i % COLORS.length]
     return line
   }))
+  samples = [] // the old readings count the old lineages; the new lines start empty
   filter(null)
   const end = d.events[d.events.length - 1]?.tick ?? 1
   $('#marks').replaceChildren(...d.events.map((e) => {

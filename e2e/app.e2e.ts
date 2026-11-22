@@ -174,6 +174,29 @@ test.describe('import', () => {
     await expect(page.locator('#dataset')).toContainText('test/repo')
   })
 
+  test('switching to a repository with more branches than the demo draws no broken chart lines', async ({ page }) => {
+    const svgErrors: string[] = []
+    page.on('console', (m) => { if (m.type() === 'error' && /NaN/.test(m.text())) svgErrors.push(m.text()) })
+    await page.route('https://api.github.com/repos/test/wide**', (route: Route) => {
+      const path = new URL(route.request().url()).pathname.replace('/repos/test/wide', '')
+      const body =
+        path === '' ? { full_name: 'test/wide', default_branch: 'main' }
+        : path === '/branches' ? ['main', 'a', 'b', 'c', 'd', 'e', 'f', 'g'].map((name) => ({ name }))
+        : path === '/pulls' ? []
+        : path === '/actions/runs' ? { workflow_runs: [] }
+        : path === '/commits' ? [1, 3, 5].map((d) => ({ sha: `sha${d}`, html_url: `https://github.com/test/wide/commit/sha${d}`, commit: { message: `change ${d}`, committer: { date: ago(d) } } }))
+        : null
+      return body === null ? route.fulfill({ status: 404, body: '{}' }) : route.fulfill({ json: body })
+    })
+    await page.goto('./?repo=test/wide&seed=3')
+    await expect(page.locator('#dataset')).toContainText('test/wide')
+    await expect.poll(() => tick(page), SLOW_START).toBeGreaterThan(60)
+    expect(await page.locator('#lines polyline').count()).toBe(8)
+    const broken = await page.$$eval('#lines polyline', (ls) => ls.filter((l) => /NaN/.test(l.getAttribute('points') ?? '')).length)
+    expect(broken).toBe(0)
+    expect(svgErrors).toEqual([])
+  })
+
   test('a saved dataset reopens without the network; a foreign file is refused', async ({ page }, info) => {
     await serveRepo(page)
     await page.goto('./')
